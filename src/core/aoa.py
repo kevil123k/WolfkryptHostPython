@@ -239,9 +239,13 @@ class AoaHost:
             return False
         
         try:
-            # Detach kernel driver if needed (Linux)
-            if self._device.is_kernel_driver_active(self._interface):
-                self._device.detach_kernel_driver(self._interface)
+            # Detach kernel driver if needed (Linux only - not supported on Windows)
+            try:
+                if self._device.is_kernel_driver_active(self._interface):
+                    self._device.detach_kernel_driver(self._interface)
+            except (NotImplementedError, usb.core.USBError):
+                # Not supported on Windows/macOS - that's fine
+                pass
             
             usb.util.claim_interface(self._device, self._interface)
             return True
