@@ -1,8 +1,8 @@
 """Core module for Wolfkrypt - USB protocol, authentication, and packet handling."""
 
-from .aoa import AoaHost
-from .auth import Authenticator
-from .protocol import (
+from src.core.aoa import AoaHost
+from src.core.auth import Authenticator
+from src.core.protocol import (
     PacketType,
     ConfigSubtype,
     PacketHeader,

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 import usb.core
 import usb.util
 
-from .protocol import USB_TIMEOUT_MS
+from src.core.protocol import USB_TIMEOUT_MS
 
 
 # AOA Protocol Constants

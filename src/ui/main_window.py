@@ -13,10 +13,11 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 
-from ..core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
-from ..core.protocol import ConfigSubtype
-from ..media import VideoDecoder, AudioDecoder
-from ..render import VideoWindow, AudioPlayer
+# Use absolute imports for PyInstaller compatibility
+from src.core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
+from src.core.protocol import ConfigSubtype
+from src.media import VideoDecoder, AudioDecoder
+from src.render import VideoWindow, AudioPlayer
 
 
 class StatusSignal(QObject):

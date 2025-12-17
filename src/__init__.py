@@ -1,5 +1,5 @@
 """Wolfkrypt Host - Screen Mirror Application."""
 
-from .main import main
+from src.main import main
 
 __all__ = ['main']

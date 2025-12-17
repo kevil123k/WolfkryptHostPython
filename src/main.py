@@ -8,7 +8,8 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from .ui import MainWindow
+# Use absolute imports for PyInstaller compatibility
+from src.ui import MainWindow
 
 
 def main():
