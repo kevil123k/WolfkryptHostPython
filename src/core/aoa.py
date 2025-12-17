@@ -3,17 +3,20 @@ AOA (Android Open Accessory) 2.0 USB host implementation.
 Uses PyUSB for direct USB communication.
 """
 
+import sys
 import time
 from typing import Callable, Optional
 
-# Import libusb_package first to set up the backend (needed for Windows)
-try:
-    import libusb_package
-except ImportError:
-    pass
-
 import usb.core
 import usb.util
+
+# Set up libusb backend (needed for Windows)
+_backend = None
+try:
+    import libusb_package
+    _backend = libusb_package.get_libusb1_backend()
+except ImportError:
+    pass
 
 from src.core.protocol import USB_TIMEOUT_MS
 
@@ -156,7 +159,7 @@ class AoaHost:
     
     def _find_android_device(self) -> Optional[usb.core.Device]:
         """Find an Android device that supports AOA."""
-        devices = usb.core.find(find_all=True)
+        devices = usb.core.find(find_all=True, backend=_backend)
         
         for device in devices:
             try:
@@ -174,12 +177,12 @@ class AoaHost:
     
     def _find_accessory_device(self) -> Optional[usb.core.Device]:
         """Find device already in accessory mode."""
-        device = usb.core.find(idVendor=AOA_ACCESSORY_VID, idProduct=AOA_ACCESSORY_PID)
+        device = usb.core.find(idVendor=AOA_ACCESSORY_VID, idProduct=AOA_ACCESSORY_PID, backend=_backend)
         if device:
             return device
         
         # Try with ADB PID
-        return usb.core.find(idVendor=AOA_ACCESSORY_VID, idProduct=AOA_ACCESSORY_ADB_PID)
+        return usb.core.find(idVendor=AOA_ACCESSORY_VID, idProduct=AOA_ACCESSORY_ADB_PID, backend=_backend)
     
     def _get_aoa_protocol_version(self, device: usb.core.Device) -> int:
         """Get AOA protocol version from device."""
