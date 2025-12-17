@@ -247,13 +247,21 @@ class AoaHost:
                 if self._device.is_kernel_driver_active(self._interface):
                     self._device.detach_kernel_driver(self._interface)
             except (NotImplementedError, usb.core.USBError):
-                # Not supported on Windows/macOS - that's fine
                 pass
+            
+            # Set configuration (required on Windows for newly connected devices)
+            try:
+                self._device.set_configuration()
+            except usb.core.USBError:
+                pass  # May already be configured
             
             usb.util.claim_interface(self._device, self._interface)
             return True
         except usb.core.USBError as e:
             self._set_error(f"Failed to claim interface: {e}")
+            return False
+        except NotImplementedError as e:
+            self._set_error(f"USB operation not supported - driver issue: {e}")
             return False
     
     def _find_bulk_endpoints(self) -> bool:
