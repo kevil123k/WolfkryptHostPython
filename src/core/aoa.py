@@ -6,6 +6,12 @@ Uses PyUSB for direct USB communication.
 import time
 from typing import Callable, Optional
 
+# Import libusb_package first to set up the backend (needed for Windows)
+try:
+    import libusb_package
+except ImportError:
+    pass
+
 import usb.core
 import usb.util
 
@@ -22,13 +28,13 @@ AOA_GET_PROTOCOL = 51
 AOA_SEND_STRING = 52
 AOA_START_ACCESSORY = 53
 
-# Accessory identification strings
+# Accessory identification strings - MUST match Android app expectations
 MANUFACTURER = "Wolfkrypt"
-MODEL = "Screen Mirror Host"
+MODEL = "ScreenMirror"  # Must match SecurityManager.EXPECTED_MODEL in Android
 DESCRIPTION = "Wolfkrypt Screen Mirror for Android"
 VERSION = "1.0"
 URI = "https://wolfkrypt.com"
-SERIAL = "WK001"
+SERIAL = "WK-00000001"
 
 
 class AoaHost:
