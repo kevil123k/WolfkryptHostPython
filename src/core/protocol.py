@@ -63,6 +63,19 @@ def parse_header(data: bytes) -> Optional[PacketHeader]:
     packet_type = data[0]
     length = struct.unpack('>I', data[1:5])[0]  # Big-endian uint32
     
+    # Sanity check: enforce maximum payload size
+    if length > MAX_PAYLOAD_SIZE:
+        import logging
+        logging.error(
+            f"Packet length {length} exceeds maximum allowed {MAX_PAYLOAD_SIZE} – discarding packet"
+        )
+        return None
+    
+    import logging
+    logging.debug(
+        f"Parsed packet header: type={PacketType(packet_type).name}, length={length}"
+    )
+    
     return PacketHeader(type=PacketType(packet_type), length=length)
 
 
