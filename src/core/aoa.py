@@ -243,23 +243,61 @@ class AoaHost:
             return False
         
         try:
+            # Print device configuration for debugging
+            print(f"[AoaHost] Device info: VID=0x{self._device.idVendor:04X} PID=0x{self._device.idProduct:04X}")
+            
             # Detach kernel driver if needed (Linux only - not supported on Windows)
             try:
                 if self._device.is_kernel_driver_active(self._interface):
                     self._device.detach_kernel_driver(self._interface)
+                    print(f"[AoaHost] Detached kernel driver from interface {self._interface}")
             except (NotImplementedError, usb.core.USBError):
                 pass
             
             # Set configuration (required on Windows for newly connected devices)
             try:
-                self._device.set_configuration()
-            except usb.core.USBError:
-                pass  # May already be configured
+                # First, try to get current configuration
+                try:
+                    current_cfg = self._device.get_active_configuration()
+                    print(f"[AoaHost] Current configuration: {current_cfg.bConfigurationValue}")
+                except usb.core.USBError:
+                    print(f"[AoaHost] No active configuration, setting default...")
+                    self._device.set_configuration()
+                    print(f"[AoaHost] Configuration set successfully")
+            except usb.core.USBError as e:
+                print(f"[AoaHost] Warning: Could not set configuration: {e}")
             
-            usb.util.claim_interface(self._device, self._interface)
-            return True
+            # On Windows, we may need to reset the device first
+            try:
+                print(f"[AoaHost] Attempting to claim interface {self._interface}...")
+                usb.util.claim_interface(self._device, self._interface)
+                print(f"[AoaHost] Successfully claimed interface {self._interface}")
+                return True
+            except usb.core.USBError as e:
+                # If claiming fails, try resetting the device
+                print(f"[AoaHost] First claim attempt failed: {e}")
+                print(f"[AoaHost] Attempting device reset...")
+                try:
+                    self._device.reset()
+                    time.sleep(1)  # Wait for device to stabilize
+                    print(f"[AoaHost] Device reset successful, retrying claim...")
+                    usb.util.claim_interface(self._device, self._interface)
+                    print(f"[AoaHost] Successfully claimed interface after reset")
+                    return True
+                except Exception as reset_error:
+                    print(f"[AoaHost] Reset and retry failed: {reset_error}")
+                    raise e  # Re-raise original error
+                
         except usb.core.USBError as e:
             self._set_error(f"Failed to claim interface: {e}")
+            # Print additional diagnostic info
+            try:
+                cfg = self._device.get_active_configuration()
+                print(f"[AoaHost] Available interfaces in configuration:")
+                for intf in cfg:
+                    print(f"  - Interface {intf.bInterfaceNumber}: {intf.bNumEndpoints} endpoints")
+            except Exception:
+                print(f"[AoaHost] Could not enumerate interfaces")
             return False
         except NotImplementedError as e:
             self._set_error(f"USB operation not supported - driver issue: {e}")
