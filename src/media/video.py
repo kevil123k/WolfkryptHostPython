@@ -21,6 +21,8 @@ class VideoDecoder:
         self._initialized = False
         self.last_error = ""
         self._frame_callback: Optional[Callable[[np.ndarray], None]] = None
+        self._error_count = 0
+        self._max_errors_before_reset = 10
     
     def set_frame_callback(self, callback: Callable[[np.ndarray], None]):
         """Set callback for decoded frames."""
@@ -42,9 +44,9 @@ class VideoDecoder:
             try:
                 codec = av.codec.Codec('h264', 'r')
                 self._codec = codec.create()
-                self._codec.extradata = self._sps + self._pps
+                # Don't set extradata, just decode SPS/PPS as regular NAL units
                 self._initialized = True
-                print("[VideoDecoder] Initialized with SPS/PPS")
+                print("[VideoDecoder] Initialized without extradata - will decode SPS/PPS in-band")
             except Exception as e:
                 self.last_error = f"Failed to initialize codec: {e}"
     
@@ -59,6 +61,7 @@ class VideoDecoder:
             
             # Decode frames
             for frame in self._codec.decode(packet):
+                self._error_count = 0  # Reset on success
                 # Convert to RGB
                 rgb_frame = frame.to_ndarray(format='rgb24')
                 
@@ -68,6 +71,13 @@ class VideoDecoder:
                 return rgb_frame
         except Exception as e:
             self.last_error = f"Decode error: {e}"
+            self._error_count += 1
+            
+            if self._error_count >= self._max_errors_before_reset:
+                print(f"[VideoDecoder] Too many errors ({self._error_count}), resetting decoder")
+                self.reset()
+                self._error_count = 0
+            
             return None
         
         return None

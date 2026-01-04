@@ -97,7 +97,8 @@ class AoaHost:
             self._report_status("Waiting for device to reconnect in accessory mode...")
             
             # Wait for device to reconnect as accessory
-            for _ in range(30):
+            # Increased timeout to 10 seconds (100 * 0.1s) for slower devices/Windows
+            for _ in range(100):
                 time.sleep(0.1)
                 device = self._find_accessory_device()
                 if device:
