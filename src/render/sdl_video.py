@@ -63,29 +63,41 @@ class SDLVideoWindow:
         return self._running
         
     def set_video_size(self, width: int, height: int):
-        """Set the video resolution (updates window aspect ratio)."""
+        """Set the video resolution (updates window to phone-shaped proportions)."""
         self._video_width = width
         self._video_height = height
         
-        # Calculate window size - scale to fit on screen
-        # For portrait phone (height > width), constrain by max_height
-        # For landscape, constrain by max_width
-        max_width = 600
-        max_height = 900
-        
-        if height > width:
-            # Portrait orientation (phone held normally)
-            scale = min(max_height / height, max_width / width)
+        # Get desktop resolution using SDL
+        display_bounds = sdl2.SDL_Rect()
+        if sdl2.SDL_GetDisplayBounds(0, ctypes.byref(display_bounds)) == 0:
+            desktop_w = display_bounds.w
+            desktop_h = display_bounds.h
         else:
-            # Landscape orientation
-            scale = min(max_width / width, max_height / height)
+            desktop_w = 1920
+            desktop_h = 1080
             
-        self._window_width = int(width * scale)
-        self._window_height = int(height * scale)
+        # Target: phone-shaped window (portrait, 9:20 aspect ratio like mobile)
+        # Leave margin for taskbar and title bar
+        margin = 100
+        max_height = desktop_h - margin
+        max_width = desktop_w - margin
+        
+        # Phone aspect ratio (9:20 portrait - typical modern phones)
+        phone_aspect = 9 / 20  # width / height
+        
+        # Calculate window size to fit on screen while maintaining phone aspect ratio
+        if max_height * phone_aspect <= max_width:
+            # Height limited
+            self._window_height = max_height
+            self._window_width = int(max_height * phone_aspect)
+        else:
+            # Width limited
+            self._window_width = max_width
+            self._window_height = int(max_width / phone_aspect)
         
         # Queue resize for SDL thread
         self._pending_resize = (self._window_width, self._window_height)
-        print(f"[SDLVideo] Video: {width}x{height} -> Window: {self._window_width}x{self._window_height}")
+        print(f"[SDLVideo] Video: {width}x{height} -> Window: {self._window_width}x{self._window_height} (desktop: {desktop_w}x{desktop_h})")
         
     def start(self) -> bool:
         """Start the SDL window in a separate thread."""
