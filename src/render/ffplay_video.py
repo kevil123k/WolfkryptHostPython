@@ -118,9 +118,9 @@ class FFplayVideo:
             ffplay_path,
             
             # === HARDWARE ACCELERATION (Priority 1) ===
-            # Try D3D11VA first (best for Windows 10/11), fallback to DXVA2, then software
-            '-hwaccel', 'd3d11va',
-            '-hwaccel_output_format', 'd3d11',
+            # Auto-detect best hardware decoder (D3D11VA, DXVA2, or software fallback)
+            # FFplay will automatically try: d3d11va -> dxva2 -> software
+            '-hwaccel', 'auto',
             
             # Input format - specify before input
             '-f', 'h264',
