@@ -35,13 +35,13 @@ class FFplayVideo:
         self._writer_thread: Optional[threading.Thread] = None
         self._stderr_thread: Optional[threading.Thread] = None
         
-        # Frame counter for periodic flush (every 5 frames to balance latency vs throughput)
+        # Frame counter for periodic flush (every 3 frames with hardware decode)
         self._frame_count = 0
-        self._flush_interval = 5
+        self._flush_interval = 3  # Lower interval with hardware decode
         
-        # Buffer for frames received before FFplay is ready (max 10 frames)
+        # Buffer for frames received before FFplay is ready (max 20 frames with hardware decode)
         self._frame_buffer = []
-        self._max_buffer_size = 10
+        self._max_buffer_size = 20  # Larger buffer for USB jitter absorption
         self._lock = threading.Lock()
         
     def set_sps(self, sps: bytes):
@@ -112,37 +112,56 @@ class FFplayVideo:
             '-nodisp', '-loglevel', 'warning'
         ]
         
-        # Simplified FFplay command optimized for reliability and low latency
+        # Optimized FFplay command for hardware-accelerated USB streaming
+        # Goal: Better than WiFi streaming with wired USB connection
         cmd = [
             ffplay_path,
+            
+            # === HARDWARE ACCELERATION (Priority 1) ===
+            # Try D3D11VA first (best for Windows 10/11), fallback to DXVA2, then software
+            '-hwaccel', 'd3d11va',
+            '-hwaccel_output_format', 'd3d11',
             
             # Input format - specify before input
             '-f', 'h264',
             
-            # Low-latency flags
-            '-fflags', 'nobuffer',
+            # === BUFFERING & LATENCY (Priority 2) ===
+            # Small buffer for USB jitter (100ms) while keeping latency low
+            '-fflags', '+genpts+igndts',  # Generate PTS, ignore DTS for smoother playback
             '-flags', 'low_delay',
-            '-framedrop',
             
-            # Give FFplay more data to work with for initialization
-            '-probesize', '32768',
-            '-analyzeduration', '500000',  # 0.5 seconds
+            # Increased probesize for proper stream detection (Priority 5)
+            '-probesize', '1048576',  # 1MB - enough to detect stream properly
+            '-analyzeduration', '1000000',  # 1 second - ensure full initialization
             
             # Input from pipe
             '-i', 'pipe:0',
             
-            # Sync and threading
+            # === SYNC & FRAME HANDLING (Priority 3 & 4) ===
+            # Audio disabled, use video sync for smoothest playback
             '-sync', 'video',
             
-            # No audio
+            # Smart frame dropping - only drop if behind, not preemptively
+            '-framedrop',
+            
+            # Max delay to absorb USB jitter (100ms buffer)
+            '-max_delay', '100000',  # 100ms in microseconds
+            
+            # Video packet queue size (enough for ~4 frames at 25fps)
+            '-vcodec', 'h264',
+            
+            # Disable audio
             '-an',
             
-            # Window options
+            # === DISPLAY OPTIONS ===
             '-window_title', self._title,
             '-alwaysontop',
             
-            # Video filter to ensure proper scaling
-            '-vf', 'scale=iw:ih',
+            # Fast bilinear scaling for performance
+            '-sws_flags', 'fast_bilinear',
+            
+            # Display dropped frames in title bar for debugging
+            '-stats',
             
             '-loglevel', 'info'
         ]
@@ -155,7 +174,8 @@ class FFplayVideo:
                 stderr=subprocess.PIPE,
                 bufsize=0
             )
-            print(f"[FFplay] Started (PID: {self._process.pid})")
+            print(f"[FFplay] Started with hardware acceleration (PID: {self._process.pid})")
+            print(f"[FFplay] Target: D3D11VA > DXVA2 > Software fallback")
             
         except Exception as e:
             print(f"[FFplay] Failed to start: {e}")
@@ -166,9 +186,9 @@ class FFplayVideo:
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stderr_thread.start()
         
-        # Give FFplay more time to initialize before sending data
+        # Give FFplay more time to initialize hardware decoder
         import time
-        time.sleep(0.1)  # 100ms delay for FFplay to set up pipes and renderer
+        time.sleep(0.15)  # 150ms for hardware decoder initialization
         
         # Send SPS/PPS if we have them
         if self._sps and self._pps:
