@@ -16,7 +16,7 @@ except ImportError:
 class AudioPlayer:
     """Low-latency audio playback using sounddevice."""
     
-    def __init__(self, sample_rate: int = 44100, channels: int = 2):
+    def __init__(self, sample_rate: int = 48000, channels: int = 2):
         self._sample_rate = sample_rate
         self._channels = channels
         self._stream: Optional[sd.OutputStream] = None

@@ -4,6 +4,8 @@ Main window for Wolfkrypt Host application.
 
 import sys
 import threading
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +43,14 @@ class MainWindow(QMainWindow):
         # State
         self._running = False
         self._receive_thread: Optional[threading.Thread] = None
+        
+        # Thread pools for non-blocking decode
+        self._video_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='video_decode')
+        self._audio_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='audio_decode')
+        
+        # Decode queues for producer-consumer pattern
+        self._video_queue: queue.Queue = queue.Queue(maxsize=30)
+        self._audio_queue: queue.Queue = queue.Queue(maxsize=50)
         
         # Status signal for thread-safe updates
         self._status_signal = StatusSignal()
@@ -93,9 +103,15 @@ class MainWindow(QMainWindow):
             lambda msg: self._status_signal.update.emit(msg)
         )
         self._video_decoder.set_frame_callback(self._video_window.show_frame)
-        self._audio_decoder.set_sample_callback(
-            lambda samples, rate: self._audio_player.play(samples)
-        )
+        self._audio_decoder.set_sample_callback(self._handle_audio_samples)
+    
+    def _handle_audio_samples(self, samples, sample_rate: int):
+        """Handle decoded audio samples with dynamic sample rate."""
+        # Update sample rate if it changed
+        if sample_rate != self._audio_player._sample_rate:
+            print(f"[Audio] Updating sample rate: {self._audio_player._sample_rate} -> {sample_rate}")
+            self._audio_player.set_sample_rate(sample_rate)
+        self._audio_player.play(samples)
     
     def _load_key(self):
         """Load private key from default location."""
@@ -189,10 +205,20 @@ class MainWindow(QMainWindow):
     def _handle_packet(self, packet_type: PacketType, payload: bytes):
         """Handle a received packet."""
         if packet_type == PacketType.VIDEO:
-            self._video_decoder.decode(payload)
+            # Decode video in background thread to prevent blocking
+            try:
+                self._video_queue.put_nowait(payload)
+                self._video_executor.submit(self._decode_video_frame)
+            except queue.Full:
+                pass  # Drop frame if queue is full
         
         elif packet_type == PacketType.AUDIO:
-            self._audio_decoder.decode(payload)
+            # Decode audio in background thread to prevent blocking
+            try:
+                self._audio_queue.put_nowait(payload)
+                self._audio_executor.submit(self._decode_audio_frame)
+            except queue.Full:
+                pass  # Drop frame if queue is full
         
         elif packet_type == PacketType.CONFIG:
             if len(payload) < 1:
@@ -222,6 +248,26 @@ class MainWindow(QMainWindow):
             self._status_signal.update.emit("Authentication failed")
             self._running = False
     
+    def _decode_video_frame(self):
+        """Decode a video frame from the queue (runs in thread pool)."""
+        try:
+            payload = self._video_queue.get_nowait()
+            self._video_decoder.decode(payload)
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"[Video] Decode error: {e}")
+    
+    def _decode_audio_frame(self):
+        """Decode an audio frame from the queue (runs in thread pool)."""
+        try:
+            payload = self._audio_queue.get_nowait()
+            self._audio_decoder.decode(payload)
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"[Audio] Decode error: {e}")
+    
     def _update_status(self, message: str):
         """Update status (called on main thread)."""
         self.statusBar().showMessage(message)
@@ -239,4 +285,9 @@ class MainWindow(QMainWindow):
         self._running = False
         self._aoa_host.disconnect()
         self._audio_player.stop()
+        
+        # Shutdown thread pools
+        self._video_executor.shutdown(wait=False)
+        self._audio_executor.shutdown(wait=False)
+        
         event.accept()
