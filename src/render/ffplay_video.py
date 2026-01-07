@@ -99,8 +99,10 @@ class FFplayVideo:
             '--opengl-swapinterval=0',  # No vsync delay
             
             # === DEMUXER SETTINGS ===
-            '--demuxer=rawvideo',  # Raw video demuxer
-            '--demuxer-rawvideo-codec=h264',  # H.264 codec
+            '--demuxer=h264',  # H.264 elementary stream demuxer
+            '--demuxer-lavf-format=h264',  # Force H.264 format
+            '--demuxer-lavf-analyzeduration=0.1',  # Quick analysis
+            '--demuxer-lavf-probesize=32768',  # Small probe (32KB)
             
             # === VIDEO OUTPUT ===
             '--vo=gpu',  # GPU-based video output (best for hw accel)
