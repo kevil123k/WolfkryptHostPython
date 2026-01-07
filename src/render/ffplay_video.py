@@ -44,6 +44,90 @@ class FFplayVideo:
         self._max_buffer_size = 20  # Larger buffer for USB jitter absorption
         self._lock = threading.Lock()
         
+    def _detect_hardware_accel(self) -> str:
+        """Detect available hardware acceleration."""
+        import platform
+        
+        if platform.system() != 'Windows':
+            return 'none'
+        
+        # Check for NVIDIA GPU
+        try:
+            result = subprocess.run(
+                ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+                capture_output=True, text=True, timeout=2
+            )
+            gpu_info = result.stdout.lower()
+            
+            if 'nvidia' in gpu_info:
+                print("[FFplay] NVIDIA GPU detected")
+                return 'nvidia'
+            elif 'intel' in gpu_info:
+                print("[FFplay] Intel GPU detected")
+                return 'intel'
+            elif 'amd' in gpu_info or 'radeon' in gpu_info:
+                print("[FFplay] AMD GPU detected")
+                return 'amd'
+        except Exception as e:
+            print(f"[FFplay] GPU detection failed: {e}")
+        
+        # Default to DirectX (works on all Windows systems)
+        print("[FFplay] Using DirectX fallback")
+        return 'dxva2'
+    
+    def _build_ffplay_command(self, ffplay_path: str, hw_accel: str) -> list:
+        """Build FFplay command with appropriate hardware acceleration."""
+        
+        cmd = [
+            ffplay_path,
+            '-f', 'h264',
+        ]
+        
+        # Add hardware acceleration based on detected hardware
+        # Based on Medium article: use -hwaccel with device type, not codec names
+        if hw_accel == 'nvidia':
+            # NVIDIA: Try CUDA first, fallback to d3d11va
+            cmd.extend(['-hwaccel', 'cuda'])
+        elif hw_accel == 'intel':
+            # Intel: Use d3d11va (works with Quick Sync)
+            cmd.extend(['-hwaccel', 'd3d11va'])
+        elif hw_accel == 'amd':
+            # AMD: Use d3d11va
+            cmd.extend(['-hwaccel', 'd3d11va'])
+        else:
+            # Fallback: DXVA2 (works on all Windows with DirectX)
+            cmd.extend(['-hwaccel', 'dxva2'])
+        
+        # Common flags for all configurations
+        cmd.extend([
+            # Buffering and latency
+            '-fflags', '+genpts+igndts',
+            '-flags', 'low_delay',
+            '-probesize', '1048576',
+            '-analyzeduration', '1000000',
+            
+            # Input
+            '-i', 'pipe:0',
+            
+            # Sync and frame handling
+            '-sync', 'video',
+            '-framedrop',
+            '-max_delay', '100000',
+            
+            # Audio disabled
+            '-an',
+            
+            # Display
+            '-window_title', self._title,
+            '-alwaysontop',
+            '-sws_flags', 'fast_bilinear',
+            '-stats',
+            
+            '-loglevel', 'info'
+        ])
+        
+        return cmd
+    
     def set_sps(self, sps: bytes):
         """Set Sequence Parameter Set."""
         if not sps.startswith(b'\x00\x00\x00\x01') and not sps.startswith(b'\x00\x00\x01'):
@@ -70,7 +154,7 @@ class FFplayVideo:
                 print(f"[FFplay] {len(self._frame_buffer)} frames buffered, will send gradually")
     
     def start(self) -> bool:
-        """Start FFplay subprocess."""
+        """Start FFplay subprocess with hardware acceleration detection."""
         if self._running:
             return True
             
@@ -79,80 +163,15 @@ class FFplayVideo:
         if not ffplay_path:
             print("[FFplay] ERROR: FFplay not found in PATH")
             return False
+        
+        # Detect available hardware acceleration
+        hw_accel = self._detect_hardware_accel()
+        print(f"[FFplay] Detected hardware: {hw_accel}")
             
         self._running = True
         
-        # FFplay command with low-latency flags
-        cmd = [
-            ffplay_path,
-            '-hide_banner',
-            
-            # Low-latency input flags
-            '-fflags', 'nobuffer',
-            '-flags', 'low_delay',
-            '-probesize', '32',
-            '-analyzeduration', '0',
-            
-            # Input format
-            '-f', 'h264',
-            '-i', 'pipe:0',
-            
-            # Display options
-            '-window_title', self._title,
-            '-autoexit',
-            
-            # Frame dropping for real-time
-            '-framedrop',
-            '-sync', 'video',
-            
-            # Disable audio (we handle it separately)
-            '-an',
-            
-            # Keyboard shortcuts disabled
-            '-nodisp', '-loglevel', 'warning'
-        ]
-        
-        # Optimized FFplay command for hardware-accelerated USB streaming
-        # Using decoder-level hardware acceleration (works with pipe input)
-        cmd = [
-            ffplay_path,
-            
-            # Input format - specify before input
-            '-f', 'h264',
-            
-            # === BUFFERING & LATENCY ===
-            # Small buffer for USB jitter while keeping latency low
-            '-fflags', '+genpts+igndts',  # Generate PTS, ignore DTS for smoother playback
-            '-flags', 'low_delay',
-            
-            # Proper probesize for stream detection
-            '-probesize', '1048576',  # 1MB
-            '-analyzeduration', '1000000',  # 1 second
-            
-            # Input from pipe
-            '-i', 'pipe:0',
-            
-            # === HARDWARE ACCELERATION AT CODEC LEVEL ===
-            # Try hardware decoders in order: h264_cuvid (NVIDIA) -> h264_qsv (Intel) -> h264 (auto with DXVA2)
-            # This works with pipe input unlike -hwaccel
-            '-vcodec', 'h264_cuvid',  # NVIDIA hardware decoder first
-            
-            # === SYNC & FRAME HANDLING ===
-            '-sync', 'video',
-            '-framedrop',
-            '-max_delay', '100000',  # 100ms jitter buffer
-            
-            # Disable audio
-            '-an',
-            
-            # === DISPLAY OPTIONS ===
-            '-window_title', self._title,
-            '-alwaysontop',
-            '-sws_flags', 'fast_bilinear',
-            '-stats',
-            
-            '-loglevel', 'info'
-        ]
+        # Build command based on detected hardware
+        cmd = self._build_ffplay_command(ffplay_path, hw_accel)
         
         try:
             self._process = subprocess.Popen(
@@ -162,44 +181,12 @@ class FFplayVideo:
                 stderr=subprocess.PIPE,
                 bufsize=0
             )
-            print(f"[FFplay] Started with NVIDIA CUVID decoder (PID: {self._process.pid})")
+            print(f"[FFplay] Started (PID: {self._process.pid})")
             
         except Exception as e:
-            print(f"[FFplay] CUVID failed: {e}, trying Intel QSV...")
-            
-            # Fallback to Intel QSV
-            cmd[cmd.index('h264_cuvid')] = 'h264_qsv'
-            
-            try:
-                self._process = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    bufsize=0
-                )
-                print(f"[FFplay] Started with Intel QSV decoder (PID: {self._process.pid})")
-                
-            except Exception as e2:
-                print(f"[FFplay] QSV failed: {e2}, using software decode...")
-                
-                # Final fallback to software
-                cmd[cmd.index('h264_qsv')] = 'h264'
-                
-                try:
-                    self._process = subprocess.Popen(
-                        cmd,
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.PIPE,
-                        bufsize=0
-                    )
-                    print(f"[FFplay] Started with software decoder (PID: {self._process.pid})")
-                    
-                except Exception as e3:
-                    print(f"[FFplay] All decoders failed: {e3}")
-                    self._running = False
-                    return False
+            print(f"[FFplay] Failed to start: {e}")
+            self._running = False
+            return False
             
         # Start stderr reader
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
