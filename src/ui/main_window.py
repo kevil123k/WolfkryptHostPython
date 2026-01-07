@@ -18,9 +18,9 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 # Use absolute imports for PyInstaller compatibility
 from src.core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
 from src.core.protocol import ConfigSubtype
-from src.media import VideoDecoder, AudioDecoder
+from src.media import AudioDecoder
 from src.render import AudioPlayer
-from src.render.sdl_video import SDLVideoWindow
+from src.render.ffplay_video import FFplayVideo
 
 
 class StatusSignal(QObject):
@@ -37,23 +37,18 @@ class MainWindow(QMainWindow):
         # Core components
         self._aoa_host = AoaHost()
         self._authenticator = Authenticator()
-        self._video_decoder = VideoDecoder()
+        self._video_player = FFplayVideo(title="Wolfkrypt Mirror")  # FFplay for low-latency video
         self._audio_decoder = AudioDecoder()
         self._audio_player = AudioPlayer()
-        
-        # SDL video window (separate window for hardware-accelerated display)
-        self._sdl_video = SDLVideoWindow(title="Wolfkrypt Mirror")
         
         # State
         self._running = False
         self._receive_thread: Optional[threading.Thread] = None
         
-        # Thread pools for non-blocking decode
-        self._video_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='video_decode')
+        # Thread pool for audio decode
         self._audio_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='audio_decode')
         
-        # Decode queues for producer-consumer pattern
-        self._video_queue: queue.Queue = queue.Queue(maxsize=30)
+        # Audio queue for producer-consumer pattern
         self._audio_queue: queue.Queue = queue.Queue(maxsize=50)
         
         # Status signal for thread-safe updates
@@ -108,10 +103,7 @@ class MainWindow(QMainWindow):
         self._aoa_host.set_status_callback(
             lambda msg: self._status_signal.update.emit(msg)
         )
-        # Video frames go to SDL window (YUV420P format)
-        self._video_decoder.set_frame_callback(self._sdl_video.update_frame)
-        # Update SDL window size when resolution is detected from SPS
-        self._video_decoder.set_resolution_callback(self._sdl_video.set_video_size)
+        # FFplay handles video decode and display - no callbacks needed
         self._audio_decoder.set_sample_callback(self._handle_audio_samples)
     
     def _handle_audio_samples(self, samples, sample_rate: int):
@@ -159,11 +151,7 @@ class MainWindow(QMainWindow):
                 self._status_signal.update.emit(f"Connect failed: {self._aoa_host.last_error}")
                 return
             
-            # Start SDL video window
-            if not self._sdl_video.start():
-                self._status_signal.update.emit("Failed to start video window")
-                # Continue anyway - audio will still work
-            
+            # FFplay will start automatically when SPS/PPS are received
             # Start audio and receive loop
             self._audio_player.start()
             self._running = True
@@ -176,8 +164,7 @@ class MainWindow(QMainWindow):
         self._running = False
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        self._video_decoder.stop()
-        self._sdl_video.stop()
+        self._video_player.stop()
         
         self._connect_btn.setEnabled(True)
         self._disconnect_btn.setEnabled(False)
@@ -220,12 +207,8 @@ class MainWindow(QMainWindow):
     def _handle_packet(self, packet_type: PacketType, payload: bytes):
         """Handle a received packet."""
         if packet_type == PacketType.VIDEO:
-            # Decode video in background thread to prevent blocking
-            try:
-                self._video_queue.put_nowait(payload)
-                self._video_executor.submit(self._decode_video_frame)
-            except queue.Full:
-                pass  # Drop frame if queue is full
+            # Send video directly to FFplay (no queuing for lowest latency!)
+            self._video_player.decode(payload)
         
         elif packet_type == PacketType.AUDIO:
             # Decode audio in background thread to prevent blocking
@@ -242,9 +225,9 @@ class MainWindow(QMainWindow):
             config_data = payload[1:]
             
             if subtype == ConfigSubtype.VIDEO_SPS:
-                self._video_decoder.set_sps(config_data)
+                self._video_player.set_sps(config_data)
             elif subtype == ConfigSubtype.VIDEO_PPS:
-                self._video_decoder.set_pps(config_data)
+                self._video_player.set_pps(config_data)
             elif subtype == ConfigSubtype.AUDIO_AAC:
                 self._audio_decoder.set_config(config_data)
         
@@ -300,11 +283,9 @@ class MainWindow(QMainWindow):
         self._running = False
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        self._video_decoder.stop()
-        self._sdl_video.stop()
+        self._video_player.stop()
         
-        # Shutdown thread pools
-        self._video_executor.shutdown(wait=False)
+        # Shutdown thread pool
         self._audio_executor.shutdown(wait=False)
         
         event.accept()
