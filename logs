@@ -1,0 +1,107 @@
+UserWarning: Using SDL2 binaries from pysdl2-dll 2.32.0
+[Auth] Private key loaded successfully
+[AoaHost] USB initialized (PyUSB)
+[AoaHost] Found Android device: VID=0x22D9 PID=0x2048
+[AoaHost] AOA protocol version: 2
+[AoaHost] Sent accessory identification strings
+[AoaHost] Accessory mode started
+[AoaHost] Waiting for device to reconnect in accessory mode...
+[AoaHost] Device info: VID=0x18D1 PID=0x2D01
+[AoaHost] Current configuration: 1
+[AoaHost] Attempting to claim interface 0...
+[AoaHost] Successfully claimed interface 0
+[AoaHost] Found endpoints: IN=0x81 OUT=0x01
+[AoaHost] Connected to Android device
+[AudioPlayer] Started: 48000Hz, 2ch
+[Auth] Challenge signed successfully
+[FFplay] SPS: 23 bytes
+[FFplay] PPS: 8 bytes
+[FFplay] Started
+[FFplay] Sent SPS/PPS
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[AudioDecoder] Initialized with AAC config
+[FFplay] [h264 @ 000001fb33bc3240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000023c29525400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000023c29525400] no frame!
+[FFplay] [h264 @ 0000023c29513240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000023c29513240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000023647825400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000023647825400] no frame!
+[FFplay] [h264 @ 0000023647813240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000023647813240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 000002b10a285400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 000002b10a285400] no frame!
+[FFplay] [h264 @ 000002b10a273240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 000002b10a273240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Pipe closed
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000016dd16e5400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000016dd16e5400] no frame!
+[FFplay] [h264 @ 0000016dd16d3240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000016dd16d3240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000024fb3025400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000024fb3025400] no frame!
+[FFplay] [h264 @ 0000024fb3013240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000024fb3013240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000029089795400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000029089795400] no frame!
+[FFplay] [h264 @ 0000029089783240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000029089783240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 0000017732035400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 0000017732035400] no frame!
+[FFplay] [h264 @ 0000017732023240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 0000017732023240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[FFplay] Started
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] [h264 @ 00000222abe05400] non-existing PPS 0 referenced
+[FFplay] Last message repeated 1 times
+[FFplay] [h264 @ 00000222abe05400] no frame!
+[FFplay] [h264 @ 00000222abdf3240] Stream #0: not enough frames to estimate rate; consider increasing probesize
+[FFplay] [h264 @ 00000222abdf3240] Could not find codec parameters for stream 0 (Video: h264, none): unspecified size
+[FFplay] Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (32) options
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe closed
+[AoaHost] Disconnected
+[AoaHost] Error: USB read error: [Errno 19] No such device (it may have been disconnected)
+[FFplay] Stopped
