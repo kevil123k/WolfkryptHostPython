@@ -275,9 +275,15 @@ class SDLVideoWindow:
         if len(yuv_data) < expected:
             return
             
+        # Extract planes
         y_plane = yuv_data[:y_size]
         u_plane = yuv_data[y_size:y_size + uv_size]
-        v_plane = yuv_data[y_size + uv_size:]
+        v_plane = yuv_data[y_size + uv_size:y_size + uv_size * 2]
+        
+        # Convert to ctypes arrays (SDL needs C pointers, not Python bytes)
+        y_array = (ctypes.c_ubyte * len(y_plane)).from_buffer_copy(y_plane)
+        u_array = (ctypes.c_ubyte * len(u_plane)).from_buffer_copy(u_plane)
+        v_array = (ctypes.c_ubyte * len(v_plane)).from_buffer_copy(v_plane)
         
         with self._lock:
             if not self._texture:
@@ -285,9 +291,9 @@ class SDLVideoWindow:
                 
             result = sdl2.SDL_UpdateYUVTexture(
                 self._texture, None,
-                y_plane, width,
-                u_plane, width // 2,
-                v_plane, width // 2
+                ctypes.cast(y_array, ctypes.POINTER(ctypes.c_ubyte)), width,
+                ctypes.cast(u_array, ctypes.POINTER(ctypes.c_ubyte)), width // 2,
+                ctypes.cast(v_array, ctypes.POINTER(ctypes.c_ubyte)), width // 2
             )
             
             if result < 0:
