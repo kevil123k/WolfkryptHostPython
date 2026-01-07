@@ -1,9 +1,9 @@
-[AoaHost] Connected to Android device
 [AudioPlayer] Started: 48000Hz, 2ch
 [Auth] Challenge signed successfully
 [FFplay] SPS: 23 bytes
 [FFplay] PPS: 8 bytes
-[FFplay] Started (PID: 5012)
+[FFplay] Started with hardware acceleration (PID: 8056)
+[FFplay] Target: D3D11VA > DXVA2 > Software fallback
 [FFplay] ffplay version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2003-2025 the FFmpeg developers
 [FFplay] built with gcc 15.2.0 (Rev8, Built by MSYS2 project)
 [FFplay] configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
@@ -14,37 +14,14 @@
 [FFplay] libavfilter    11.  4.100 / 11.  4.100
 [FFplay] libswscale      9.  1.100 /  9.  1.100
 [FFplay] libswresample   6.  1.100 /  6.  1.100
-[FFplay] Failed to set value '-loglevel' for option 'xerror': Option not found
-[FFplay] Config send error: [Errno 22] Invalid argument
+[FFplay] Enable vulkan renderer to support hwaccel auto
+[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
+[FFplay] Sent SPS/PPS config
+[FFplay] Ready for video frames
 [FFplay] 0 frames buffered, will send gradually
 [AudioDecoder] Initialized with AAC config
-[Auth] Challenge signed successfully
-[FFplay] SPS: 23 bytes
-[FFplay] Started (PID: 1016)
-[FFplay] ffplay version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2003-2025 the FFmpeg developers
-[FFplay] built with gcc 15.2.0 (Rev8, Built by MSYS2 project)
-[FFplay] configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
-[FFplay] libavutil      60.  8.100 / 60.  8.100
-[FFplay] libavcodec     62. 11.100 / 62. 11.100
-[FFplay] libavformat    62.  3.100 / 62.  3.100
-[FFplay] libavdevice    62.  1.100 / 62.  1.100
-[FFplay] libavfilter    11.  4.100 / 11.  4.100
-[FFplay] libswscale      9.  1.100 /  9.  1.100
-[FFplay] libswresample   6.  1.100 /  6.  1.100
-[FFplay] Failed to set value '-loglevel' for option 'xerror': Option not found
-[FFplay] Config send error: [Errno 22] Invalid argument
-[FFplay] PPS: 8 bytes
-[FFplay] Started (PID: 8592)
-[FFplay] ffplay version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2003-2025 the FFmpeg developers
-[FFplay] built with gcc 15.2.0 (Rev8, Built by MSYS2 project)
-[FFplay] configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
-[FFplay] libavutil      60.  8.100 / 60.  8.100
-[FFplay] libavcodec     62. 11.100 / 62. 11.100
-[FFplay] libavformat    62.  3.100 / 62.  3.100
-[FFplay] libavdevice    62.  1.100 / 62.  1.100
-[FFplay] libavfilter    11.  4.100 / 11.  4.100
-[FFplay] libswscale      9.  1.100 /  9.  1.100
-[FFplay] libswresample   6.  1.100 /  6.  1.100
-[FFplay] Failed to set value '-loglevel' for option 'xerror': Option not found
-[FFplay] Config send error: [Errno 22] Invalid argument
-[FFplay] 10 frames buffered, will send gradually
+Input #0, h264, from 'pipe:0':=    0KB vq=    0KB sq=    0B   0B
+[FFplay] Duration: N/A, bitrate: N/A
+[FFplay] Stream #0:0: Video: h264 (Baseline), yuv420p(tv, bt709, progressive), 2400x1080, 25 fps, 1200k tbr, 1200k tbn
+[FFplay] Failed to open file 'pipe:0' or configure filtergraph
+[FFplay] Pipe error: [Errno 22] Invalid argument

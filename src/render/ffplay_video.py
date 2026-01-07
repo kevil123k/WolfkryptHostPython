@@ -113,42 +113,34 @@ class FFplayVideo:
         ]
         
         # Optimized FFplay command for hardware-accelerated USB streaming
-        # Goal: Better than WiFi streaming with wired USB connection
+        # Using decoder-level hardware acceleration (works with pipe input)
         cmd = [
             ffplay_path,
-            
-            # === HARDWARE ACCELERATION (Priority 1) ===
-            # Auto-detect best hardware decoder (D3D11VA, DXVA2, or software fallback)
-            # FFplay will automatically try: d3d11va -> dxva2 -> software
-            '-hwaccel', 'auto',
             
             # Input format - specify before input
             '-f', 'h264',
             
-            # === BUFFERING & LATENCY (Priority 2) ===
-            # Small buffer for USB jitter (100ms) while keeping latency low
+            # === BUFFERING & LATENCY ===
+            # Small buffer for USB jitter while keeping latency low
             '-fflags', '+genpts+igndts',  # Generate PTS, ignore DTS for smoother playback
             '-flags', 'low_delay',
             
-            # Increased probesize for proper stream detection (Priority 5)
-            '-probesize', '1048576',  # 1MB - enough to detect stream properly
-            '-analyzeduration', '1000000',  # 1 second - ensure full initialization
+            # Proper probesize for stream detection
+            '-probesize', '1048576',  # 1MB
+            '-analyzeduration', '1000000',  # 1 second
             
             # Input from pipe
             '-i', 'pipe:0',
             
-            # === SYNC & FRAME HANDLING (Priority 3 & 4) ===
-            # Audio disabled, use video sync for smoothest playback
+            # === HARDWARE ACCELERATION AT CODEC LEVEL ===
+            # Try hardware decoders in order: h264_cuvid (NVIDIA) -> h264_qsv (Intel) -> h264 (auto with DXVA2)
+            # This works with pipe input unlike -hwaccel
+            '-vcodec', 'h264_cuvid',  # NVIDIA hardware decoder first
+            
+            # === SYNC & FRAME HANDLING ===
             '-sync', 'video',
-            
-            # Smart frame dropping - only drop if behind, not preemptively
             '-framedrop',
-            
-            # Max delay to absorb USB jitter (100ms buffer)
-            '-max_delay', '100000',  # 100ms in microseconds
-            
-            # Video packet queue size (enough for ~4 frames at 25fps)
-            '-vcodec', 'h264',
+            '-max_delay', '100000',  # 100ms jitter buffer
             
             # Disable audio
             '-an',
@@ -156,11 +148,7 @@ class FFplayVideo:
             # === DISPLAY OPTIONS ===
             '-window_title', self._title,
             '-alwaysontop',
-            
-            # Fast bilinear scaling for performance
             '-sws_flags', 'fast_bilinear',
-            
-            # Display dropped frames in title bar for debugging
             '-stats',
             
             '-loglevel', 'info'
@@ -174,13 +162,44 @@ class FFplayVideo:
                 stderr=subprocess.PIPE,
                 bufsize=0
             )
-            print(f"[FFplay] Started with hardware acceleration (PID: {self._process.pid})")
-            print(f"[FFplay] Target: D3D11VA > DXVA2 > Software fallback")
+            print(f"[FFplay] Started with NVIDIA CUVID decoder (PID: {self._process.pid})")
             
         except Exception as e:
-            print(f"[FFplay] Failed to start: {e}")
-            self._running = False
-            return False
+            print(f"[FFplay] CUVID failed: {e}, trying Intel QSV...")
+            
+            # Fallback to Intel QSV
+            cmd[cmd.index('h264_cuvid')] = 'h264_qsv'
+            
+            try:
+                self._process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    bufsize=0
+                )
+                print(f"[FFplay] Started with Intel QSV decoder (PID: {self._process.pid})")
+                
+            except Exception as e2:
+                print(f"[FFplay] QSV failed: {e2}, using software decode...")
+                
+                # Final fallback to software
+                cmd[cmd.index('h264_qsv')] = 'h264'
+                
+                try:
+                    self._process = subprocess.Popen(
+                        cmd,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        bufsize=0
+                    )
+                    print(f"[FFplay] Started with software decoder (PID: {self._process.pid})")
+                    
+                except Exception as e3:
+                    print(f"[FFplay] All decoders failed: {e3}")
+                    self._running = False
+                    return False
             
         # Start stderr reader
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
