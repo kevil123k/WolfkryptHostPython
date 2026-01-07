@@ -83,18 +83,31 @@ class AudioPlayer:
         try:
             samples = self._queue.get_nowait()
             
-            # Ensure correct shape
-            if samples.ndim == 1:
+            # PyAV returns (channels, samples), sounddevice needs (samples, channels)
+            if samples.ndim == 2:
+                if samples.shape[0] == self._channels and samples.shape[1] > self._channels:
+                    # Shape is (channels, samples) - transpose to (samples, channels)
+                    samples = samples.T
+            elif samples.ndim == 1:
+                # Mono audio - reshape to (samples, 1)
                 samples = samples.reshape(-1, 1)
             
+            # Ensure float32 dtype
+            if samples.dtype != np.float32:
+                samples = samples.astype(np.float32)
+            
             # Fill output buffer
-            if len(samples) >= frames:
+            num_samples = samples.shape[0]
+            if num_samples >= frames:
                 outdata[:] = samples[:frames]
             else:
-                outdata[:len(samples)] = samples
-                outdata[len(samples):] = 0
+                outdata[:num_samples] = samples
+                outdata[num_samples:] = 0
         except queue.Empty:
             # No data, output silence
+            outdata.fill(0)
+        except Exception as e:
+            # Catch any other errors to prevent callback failure
             outdata.fill(0)
     
     def set_sample_rate(self, sample_rate: int):

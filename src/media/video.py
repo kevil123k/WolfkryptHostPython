@@ -57,7 +57,18 @@ class VideoDecoder:
         
         try:
             # Create packet from NAL unit
-            packet = av.Packet(nal_unit)
+            # If we have SPS/PPS and this is a new IDR frame, prepend them
+            if self._sps and self._pps:
+                # Check if this is an IDR frame (NAL type 5) - may need SPS/PPS
+                nal_type = nal_unit[4] & 0x1F if len(nal_unit) > 4 else 0
+                if nal_type == 5:  # IDR frame
+                    # Prepend SPS and PPS to ensure decoder has them
+                    combined = self._sps + self._pps + nal_unit
+                    packet = av.Packet(combined)
+                else:
+                    packet = av.Packet(nal_unit)
+            else:
+                packet = av.Packet(nal_unit)
             
             # Decode frames
             for frame in self._codec.decode(packet):
@@ -70,8 +81,11 @@ class VideoDecoder:
                 
                 return rgb_frame
         except Exception as e:
-            self.last_error = f"Decode error: {e}"
             self._error_count += 1
+            
+            # Only log every 10th error to reduce spam
+            if self._error_count <= 1 or self._error_count % 10 == 0:
+                self.last_error = f"Decode error: {e}"
             
             if self._error_count >= self._max_errors_before_reset:
                 print(f"[VideoDecoder] Too many errors ({self._error_count}), resetting decoder")
