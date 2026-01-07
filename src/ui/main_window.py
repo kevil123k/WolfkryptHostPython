@@ -110,6 +110,8 @@ class MainWindow(QMainWindow):
         )
         # Video frames go to SDL window (YUV420P format)
         self._video_decoder.set_frame_callback(self._sdl_video.update_frame)
+        # Update SDL window size when resolution is detected from SPS
+        self._video_decoder.set_resolution_callback(self._sdl_video.set_video_size)
         self._audio_decoder.set_sample_callback(self._handle_audio_samples)
     
     def _handle_audio_samples(self, samples, sample_rate: int):

@@ -2,8 +2,7 @@
 SDL2 Hardware-Accelerated Video Window.
 
 This module provides a separate SDL2 window for displaying video frames
-with hardware acceleration. It runs in its own thread to avoid blocking
-the main UI.
+with hardware acceleration. Supports mobile aspect ratios and fullscreen toggle.
 """
 
 import ctypes
@@ -17,49 +16,66 @@ try:
     SDL2_AVAILABLE = True
 except ImportError:
     SDL2_AVAILABLE = False
-    print("[SDLVideo] Warning: PySDL2 not available - video display disabled")
+    print("[SDLVideo] Warning: PySDL2 not available")
 
 
 class SDLVideoWindow:
     """
-    Separate SDL2 window for video display with hardware acceleration.
+    SDL2 window for video display with hardware acceleration.
     
     Features:
-    - Hardware-accelerated rendering via GPU
+    - Hardware-accelerated GPU rendering
     - YUV420P native format (no CPU color conversion)
-    - Runs in separate thread for low latency
-    - Automatic window resizing
-    - VSync support
+    - Mobile aspect ratio support (9:20, 9:16, etc.)
+    - Fullscreen toggle (F11 or double-click)
+    - Dynamic resolution updates
     """
     
-    def __init__(self, title: str = "Wolfkrypt Mirror", width: int = 1920, height: int = 1080):
-        """
-        Initialize the SDL video window.
-        
-        Args:
-            title: Window title
-            width: Initial window width
-            height: Initial window height
-        """
+    def __init__(self, title: str = "Wolfkrypt Mirror"):
+        """Initialize the SDL video window."""
         self._title = title
-        self._width = width
-        self._height = height
-        self._texture_width = width
-        self._texture_height = height
+        
+        # Default to mobile portrait size (will be updated from SPS)
+        self._video_width = 1080
+        self._video_height = 2400
+        
+        # Window size (scaled for display)
+        self._window_width = 405   # 1080 * 0.375
+        self._window_height = 900  # 2400 * 0.375
         
         self._window = None
         self._renderer = None
         self._texture = None
+        self._texture_width = 0
+        self._texture_height = 0
+        
         self._running = False
         self._initialized = False
+        self._fullscreen = False
         
         self._thread: Optional[threading.Thread] = None
-        self._frame_queue: queue.Queue = queue.Queue(maxsize=3)  # Small buffer for low latency
+        self._frame_queue: queue.Queue = queue.Queue(maxsize=3)
         self._lock = threading.Lock()
+        self._pending_resize: Optional[Tuple[int, int]] = None
         
     @property
     def is_running(self) -> bool:
         return self._running
+        
+    def set_video_size(self, width: int, height: int):
+        """Set the video resolution (updates window aspect ratio)."""
+        self._video_width = width
+        self._video_height = height
+        
+        # Calculate window size (scale to fit reasonable screen size)
+        max_height = 900
+        scale = min(1.0, max_height / height)
+        self._window_width = int(width * scale)
+        self._window_height = int(height * scale)
+        
+        # Queue resize for SDL thread
+        self._pending_resize = (self._window_width, self._window_height)
+        print(f"[SDLVideo] Video size set: {width}x{height} -> window {self._window_width}x{self._window_height}")
         
     def start(self) -> bool:
         """Start the SDL window in a separate thread."""
@@ -85,48 +101,37 @@ class SDLVideoWindow:
     def _run(self):
         """SDL event loop (runs in separate thread)."""
         try:
-            # Initialize SDL video subsystem
             if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO) < 0:
-                error = sdl2.SDL_GetError()
-                print(f"[SDLVideo] Failed to init SDL: {error}")
+                print(f"[SDLVideo] Failed to init SDL: {sdl2.SDL_GetError()}")
                 self._running = False
                 return
                 
-            # Create window
+            # Create resizable window (not fullscreen)
             self._window = sdl2.SDL_CreateWindow(
                 self._title.encode('utf-8'),
                 sdl2.SDL_WINDOWPOS_CENTERED,
                 sdl2.SDL_WINDOWPOS_CENTERED,
-                self._width,
-                self._height,
-                sdl2.SDL_WINDOW_SHOWN | sdl2.SDL_WINDOW_RESIZABLE | sdl2.SDL_WINDOW_ALLOW_HIGHDPI
+                self._window_width,
+                self._window_height,
+                sdl2.SDL_WINDOW_SHOWN | sdl2.SDL_WINDOW_RESIZABLE
             )
             
             if not self._window:
-                error = sdl2.SDL_GetError()
-                print(f"[SDLVideo] Failed to create window: {error}")
+                print(f"[SDLVideo] Failed to create window: {sdl2.SDL_GetError()}")
                 self._running = False
                 return
                 
-            # Create hardware-accelerated renderer with VSync
+            # Create hardware renderer with VSync
             self._renderer = sdl2.SDL_CreateRenderer(
-                self._window,
-                -1,  # Use first available renderer
+                self._window, -1,
                 sdl2.SDL_RENDERER_ACCELERATED | sdl2.SDL_RENDERER_PRESENTVSYNC
             )
             
             if not self._renderer:
-                # Fall back to software renderer
-                print("[SDLVideo] Hardware renderer unavailable, using software")
-                self._renderer = sdl2.SDL_CreateRenderer(
-                    self._window,
-                    -1,
-                    sdl2.SDL_RENDERER_SOFTWARE
-                )
+                self._renderer = sdl2.SDL_CreateRenderer(self._window, -1, 0)
                 
             if not self._renderer:
-                error = sdl2.SDL_GetError()
-                print(f"[SDLVideo] Failed to create renderer: {error}")
+                print(f"[SDLVideo] Failed to create renderer")
                 self._running = False
                 return
                 
@@ -134,22 +139,19 @@ class SDLVideoWindow:
             info = sdl2.SDL_RendererInfo()
             sdl2.SDL_GetRendererInfo(self._renderer, ctypes.byref(info))
             renderer_name = info.name.decode('utf-8') if info.name else 'unknown'
-            print(f"[SDLVideo] Renderer: {renderer_name}")
+            print(f"[SDLVideo] Window: {self._window_width}x{self._window_height}, Renderer: {renderer_name}")
             
-            # Create YUV texture for direct GPU upload
-            self._create_texture(self._texture_width, self._texture_height)
-            
-            if not self._texture:
-                print("[SDLVideo] Failed to create texture")
-                self._running = False
-                return
-                
             self._initialized = True
-            print(f"[SDLVideo] Window created: {self._width}x{self._height}")
             
             # Event loop
             event = sdl2.SDL_Event()
             while self._running:
+                # Handle pending resize
+                if self._pending_resize:
+                    w, h = self._pending_resize
+                    self._pending_resize = None
+                    sdl2.SDL_SetWindowSize(self._window, w, h)
+                    
                 # Handle SDL events
                 while sdl2.SDL_PollEvent(ctypes.byref(event)):
                     if event.type == sdl2.SDL_QUIT:
@@ -159,19 +161,40 @@ class SDLVideoWindow:
                         if event.window.event == sdl2.SDL_WINDOWEVENT_CLOSE:
                             self._running = False
                             break
+                    elif event.type == sdl2.SDL_KEYDOWN:
+                        # F11 for fullscreen toggle
+                        if event.key.keysym.sym == sdl2.SDLK_F11:
+                            self._toggle_fullscreen()
+                        # ESC to exit fullscreen
+                        elif event.key.keysym.sym == sdl2.SDLK_ESCAPE and self._fullscreen:
+                            self._toggle_fullscreen()
+                    elif event.type == sdl2.SDL_MOUSEBUTTONDOWN:
+                        # Double-click for fullscreen
+                        if event.button.clicks == 2:
+                            self._toggle_fullscreen()
                             
                 # Display frame if available
                 try:
                     frame = self._frame_queue.get_nowait()
                     self._display_frame(frame)
                 except queue.Empty:
-                    # No frame available, just present current state
-                    sdl2.SDL_Delay(1)  # Prevent busy loop
+                    sdl2.SDL_Delay(1)
                     
         except Exception as e:
-            print(f"[SDLVideo] Error in event loop: {e}")
+            print(f"[SDLVideo] Error: {e}")
         finally:
             self._cleanup()
+            
+    def _toggle_fullscreen(self):
+        """Toggle between fullscreen and windowed mode."""
+        if self._fullscreen:
+            sdl2.SDL_SetWindowFullscreen(self._window, 0)
+            self._fullscreen = False
+            print("[SDLVideo] Windowed mode")
+        else:
+            sdl2.SDL_SetWindowFullscreen(self._window, sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP)
+            self._fullscreen = True
+            print("[SDLVideo] Fullscreen mode (F11 or ESC to exit)")
             
     def _create_texture(self, width: int, height: int):
         """Create or recreate the YUV texture."""
@@ -179,39 +202,28 @@ class SDLVideoWindow:
             if self._texture:
                 sdl2.SDL_DestroyTexture(self._texture)
                 
-            # Create YUV420P texture
             self._texture = sdl2.SDL_CreateTexture(
                 self._renderer,
-                sdl2.SDL_PIXELFORMAT_IYUV,  # YUV420P / I420
+                sdl2.SDL_PIXELFORMAT_IYUV,
                 sdl2.SDL_TEXTUREACCESS_STREAMING,
-                width,
-                height
+                width, height
             )
             
             if self._texture:
                 self._texture_width = width
                 self._texture_height = height
-                print(f"[SDLVideo] Texture created: {width}x{height}")
+                print(f"[SDLVideo] Texture: {width}x{height}")
             else:
-                error = sdl2.SDL_GetError()
-                print(f"[SDLVideo] Failed to create texture: {error}")
+                print(f"[SDLVideo] Failed to create texture")
                 
     def update_frame(self, yuv_data: bytes, width: int, height: int):
-        """
-        Queue a YUV420P frame for display.
-        
-        Args:
-            yuv_data: YUV420P frame data (Y plane + U plane + V plane)
-            width: Frame width
-            height: Frame height
-        """
+        """Queue a YUV420P frame for display."""
         if not self._running or not self._initialized:
             return
             
         try:
             self._frame_queue.put_nowait((yuv_data, width, height))
         except queue.Full:
-            # Drop oldest frame to make room
             try:
                 self._frame_queue.get_nowait()
                 self._frame_queue.put_nowait((yuv_data, width, height))
@@ -219,12 +231,17 @@ class SDLVideoWindow:
                 pass
                 
     def _display_frame(self, frame_data: Tuple[bytes, int, int]):
-        """Display a YUV frame on the texture."""
+        """Display a YUV frame."""
         yuv_data, width, height = frame_data
         
-        # Resize texture if dimensions changed
+        # Create/resize texture if needed
         if width != self._texture_width or height != self._texture_height:
             self._create_texture(width, height)
+            
+            # Also update window size on first frame
+            if not self._fullscreen:
+                self.set_video_size(width, height)
+                
             if not self._texture:
                 return
                 
@@ -232,35 +249,28 @@ class SDLVideoWindow:
         y_size = width * height
         uv_size = y_size // 4
         
-        expected_size = y_size + uv_size * 2
-        if len(yuv_data) < expected_size:
-            print(f"[SDLVideo] Invalid frame size: {len(yuv_data)} < {expected_size}")
+        expected = y_size + uv_size * 2
+        if len(yuv_data) < expected:
             return
             
-        # Extract planes
         y_plane = yuv_data[:y_size]
         u_plane = yuv_data[y_size:y_size + uv_size]
-        v_plane = yuv_data[y_size + uv_size:y_size + uv_size * 2]
+        v_plane = yuv_data[y_size + uv_size:]
         
-        # Update YUV texture
         with self._lock:
             if not self._texture:
                 return
                 
             result = sdl2.SDL_UpdateYUVTexture(
-                self._texture,
-                None,  # Update entire texture
-                y_plane, width,           # Y plane and pitch
-                u_plane, width // 2,      # U plane and pitch
-                v_plane, width // 2       # V plane and pitch
+                self._texture, None,
+                y_plane, width,
+                u_plane, width // 2,
+                v_plane, width // 2
             )
             
             if result < 0:
-                error = sdl2.SDL_GetError()
-                print(f"[SDLVideo] Failed to update texture: {error}")
                 return
                 
-            # Clear and render
             sdl2.SDL_RenderClear(self._renderer)
             sdl2.SDL_RenderCopy(self._renderer, self._texture, None, None)
             sdl2.SDL_RenderPresent(self._renderer)
@@ -271,26 +281,19 @@ class SDLVideoWindow:
             if self._texture:
                 sdl2.SDL_DestroyTexture(self._texture)
                 self._texture = None
-                
             if self._renderer:
                 sdl2.SDL_DestroyRenderer(self._renderer)
                 self._renderer = None
-                
             if self._window:
                 sdl2.SDL_DestroyWindow(self._window)
                 self._window = None
                 
         sdl2.SDL_Quit()
         self._initialized = False
-        print("[SDLVideo] Cleanup complete")
+        print("[SDLVideo] Closed")
         
     def stop(self):
         """Stop the SDL window."""
         self._running = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
-            
-    def resize(self, width: int, height: int):
-        """Resize the window."""
-        if self._window:
-            sdl2.SDL_SetWindowSize(self._window, width, height)
