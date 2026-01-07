@@ -217,7 +217,7 @@ class VideoDecoder:
         # Build FFmpeg command
         cmd = [
             ffmpeg_path,
-            '-loglevel', 'warning',
+            '-loglevel', 'info',
             '-hwaccel', 'auto',
             '-f', 'h264',
             '-i', 'pipe:0',
@@ -335,7 +335,8 @@ class VideoDecoder:
                 line = self._process.stderr.readline()
                 if line:
                     msg = line.decode('utf-8', errors='ignore').strip()
-                    if msg and ('error' in msg.lower() or 'warning' in msg.lower()):
+                    if msg:
+                        # Show all FFmpeg messages for debugging
                         print(f"[FFmpeg] {msg}")
             except Exception:
                 break

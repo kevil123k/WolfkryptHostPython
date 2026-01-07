@@ -67,15 +67,25 @@ class SDLVideoWindow:
         self._video_width = width
         self._video_height = height
         
-        # Calculate window size (scale to fit reasonable screen size)
+        # Calculate window size - scale to fit on screen
+        # For portrait phone (height > width), constrain by max_height
+        # For landscape, constrain by max_width
+        max_width = 600
         max_height = 900
-        scale = min(1.0, max_height / height)
+        
+        if height > width:
+            # Portrait orientation (phone held normally)
+            scale = min(max_height / height, max_width / width)
+        else:
+            # Landscape orientation
+            scale = min(max_width / width, max_height / height)
+            
         self._window_width = int(width * scale)
         self._window_height = int(height * scale)
         
         # Queue resize for SDL thread
         self._pending_resize = (self._window_width, self._window_height)
-        print(f"[SDLVideo] Video size set: {width}x{height} -> window {self._window_width}x{self._window_height}")
+        print(f"[SDLVideo] Video: {width}x{height} -> Window: {self._window_width}x{self._window_height}")
         
     def start(self) -> bool:
         """Start the SDL window in a separate thread."""
