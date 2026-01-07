@@ -144,9 +144,6 @@ class FFplayVideo:
             # Video filter to ensure proper scaling
             '-vf', 'scale=iw:ih',
             
-            # Don't exit on errors, just skip bad frames
-            '-xerror',
-            
             '-loglevel', 'info'
         ]
         
