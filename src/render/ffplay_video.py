@@ -116,12 +116,12 @@ class FFplayVideo:
             ffplay_path,
             '-hide_banner',
             
-            # Low-latency input flags
+            # Low-latency input flags (increased slightly for stability)
             '-fflags', 'nobuffer+fastseek+flush_packets',
             '-flags', 'low_delay',
             '-strict', 'experimental',
-            '-probesize', '32',
-            '-analyzeduration', '0',
+            '-probesize', '8192',  # Increased from 32 to allow proper initialization
+            '-analyzeduration', '100000',  # 0.1 seconds to detect stream params
             
             # Hardware acceleration (try multiple backends)
             '-hwaccel', 'auto',
@@ -136,7 +136,6 @@ class FFplayVideo:
             
             # Frame dropping and sync for real-time streaming
             '-framedrop',
-            '-infbuf',  # Infinite buffer to avoid blocking (but fflags nobuffer keeps it small)
             '-sync', 'ext',  # External sync for lowest latency
             
             # Video thread count (1 for lowest latency)
@@ -145,7 +144,7 @@ class FFplayVideo:
             # Disable audio
             '-an',
             
-            '-loglevel', 'warning'
+            '-loglevel', 'info'  # Changed to info to see what's happening
         ]
         
         try:
@@ -156,7 +155,7 @@ class FFplayVideo:
                 stderr=subprocess.PIPE,
                 bufsize=0
             )
-            print(f"[FFplay] Started")
+            print(f"[FFplay] Started (PID: {self._process.pid})")
             
         except Exception as e:
             print(f"[FFplay] Failed to start: {e}")
@@ -166,6 +165,10 @@ class FFplayVideo:
         # Start stderr reader
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stderr_thread.start()
+        
+        # Give FFplay a moment to initialize before sending data
+        import time
+        time.sleep(0.05)  # 50ms delay for FFplay to set up pipes
         
         # Send SPS/PPS if we have them
         if self._sps and self._pps:
@@ -180,15 +183,23 @@ class FFplayVideo:
             
         try:
             if self._process and self._process.stdin:
+                # Send SPS and PPS as separate NAL units
                 self._process.stdin.write(self._sps)
                 self._process.stdin.write(self._pps)
-                # Always flush config frames immediately
+                # Flush immediately to ensure FFplay gets config
                 self._process.stdin.flush()
                 self._config_sent = True
-                self._ready = True  # FFplay is now ready to receive frames
-                print("[FFplay] Sent SPS/PPS - Ready for frames")
+                print("[FFplay] Sent SPS/PPS config")
                 # Reset frame count after config
                 self._frame_count = 0
+                
+                # Mark as ready but don't set flag yet - wait for first frame
+                # This prevents buffered frames from being sent before FFplay is fully initialized
+                import time
+                time.sleep(0.02)  # 20ms for FFplay to process config
+                self._ready = True
+                print("[FFplay] Ready for video frames")
+                
         except Exception as e:
             print(f"[FFplay] Config send error: {e}")
             self._running = False
