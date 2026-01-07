@@ -65,8 +65,9 @@ class FFplayVideo:
         # Start FFplay now that we have both SPS and PPS
         if self._sps and not self._running:
             if self.start():
-                # FFplay started successfully, now send buffered frames
-                self._flush_buffer()
+                # Don't flush buffer immediately - let frames flow naturally
+                # This prevents overwhelming FFplay during initialization
+                print(f"[FFplay] {len(self._frame_buffer)} frames buffered, will send gradually")
     
     def start(self) -> bool:
         """Start FFplay subprocess."""
@@ -111,40 +112,42 @@ class FFplayVideo:
             '-nodisp', '-loglevel', 'warning'
         ]
         
-        # Optimized FFplay command for lowest latency
+        # Simplified FFplay command optimized for reliability and low latency
         cmd = [
             ffplay_path,
-            '-hide_banner',
             
-            # Low-latency input flags (increased slightly for stability)
-            '-fflags', 'nobuffer+fastseek+flush_packets',
-            '-flags', 'low_delay',
-            '-strict', 'experimental',
-            '-probesize', '8192',  # Increased from 32 to allow proper initialization
-            '-analyzeduration', '100000',  # 0.1 seconds to detect stream params
-            
-            # Hardware acceleration (try multiple backends)
-            '-hwaccel', 'auto',
-            
-            # Input format
+            # Input format - specify before input
             '-f', 'h264',
+            
+            # Low-latency flags
+            '-fflags', 'nobuffer',
+            '-flags', 'low_delay',
+            '-framedrop',
+            
+            # Give FFplay more data to work with for initialization
+            '-probesize', '32768',
+            '-analyzeduration', '500000',  # 0.5 seconds
+            
+            # Input from pipe
             '-i', 'pipe:0',
             
-            # Display options
-            '-window_title', self._title,
-            '-autoexit',
+            # Sync and threading
+            '-sync', 'video',
             
-            # Frame dropping and sync for real-time streaming
-            '-framedrop',
-            '-sync', 'ext',  # External sync for lowest latency
-            
-            # Video thread count (1 for lowest latency)
-            '-threads', '1',
-            
-            # Disable audio
+            # No audio
             '-an',
             
-            '-loglevel', 'info'  # Changed to info to see what's happening
+            # Window options
+            '-window_title', self._title,
+            '-alwaysontop',
+            
+            # Video filter to ensure proper scaling
+            '-vf', 'scale=iw:ih',
+            
+            # Don't exit on errors, just skip bad frames
+            '-xerror',
+            
+            '-loglevel', 'info'
         ]
         
         try:
@@ -166,9 +169,9 @@ class FFplayVideo:
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stderr_thread.start()
         
-        # Give FFplay a moment to initialize before sending data
+        # Give FFplay more time to initialize before sending data
         import time
-        time.sleep(0.05)  # 50ms delay for FFplay to set up pipes
+        time.sleep(0.1)  # 100ms delay for FFplay to set up pipes and renderer
         
         # Send SPS/PPS if we have them
         if self._sps and self._pps:
@@ -193,10 +196,9 @@ class FFplayVideo:
                 # Reset frame count after config
                 self._frame_count = 0
                 
-                # Mark as ready but don't set flag yet - wait for first frame
-                # This prevents buffered frames from being sent before FFplay is fully initialized
+                # Wait longer for FFplay to fully initialize the filtergraph
                 import time
-                time.sleep(0.02)  # 20ms for FFplay to process config
+                time.sleep(0.15)  # 150ms for FFplay to set up video pipeline
                 self._ready = True
                 print("[FFplay] Ready for video frames")
                 
@@ -219,11 +221,24 @@ class FFplayVideo:
                         self._frame_buffer.pop(0)
                         self._frame_buffer.append(h264_data)
             return
+        
+        # Send buffered frames first (one per call to avoid overwhelming FFplay)
+        with self._lock:
+            if self._frame_buffer:
+                buffered_frame = self._frame_buffer.pop(0)
+                try:
+                    if self._process and self._process.stdin:
+                        self._process.stdin.write(buffered_frame)
+                except Exception as e:
+                    print(f"[FFplay] Buffer send error: {e}")
+                    self._running = False
+                    self._ready = False
+                    return
                 
         if not self._process or not self._process.stdin:
             return
             
-        # Send H.264 data directly
+        # Send current H.264 data
         try:
             self._process.stdin.write(h264_data)
             
