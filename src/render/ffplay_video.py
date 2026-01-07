@@ -188,7 +188,8 @@ class FFplayVideo:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 bufsize=0
-            )mpv] Started (PID: {self._process.pid})")
+            )
+            print(f"[mpv] Started (PID: {self._process.pid})")
             
         except Exception as e:
             print(f"[mpv] Failed to start: {e}")
