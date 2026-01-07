@@ -19,7 +19,8 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 from src.core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
 from src.core.protocol import ConfigSubtype
 from src.media import VideoDecoder, AudioDecoder
-from src.render import VideoWindow, AudioPlayer
+from src.render import AudioPlayer
+from src.render.sdl_video import SDLVideoWindow
 
 
 class StatusSignal(QObject):
@@ -39,6 +40,9 @@ class MainWindow(QMainWindow):
         self._video_decoder = VideoDecoder()
         self._audio_decoder = AudioDecoder()
         self._audio_player = AudioPlayer()
+        
+        # SDL video window (separate window for hardware-accelerated display)
+        self._sdl_video = SDLVideoWindow(title="Wolfkrypt Mirror")
         
         # State
         self._running = False
@@ -63,16 +67,18 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         """Set up the user interface."""
         self.setWindowTitle("Wolfkrypt Host")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(400, 200)
         
         # Central widget
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         
-        # Video display
-        self._video_window = VideoWindow()
-        layout.addWidget(self._video_window, 1)
+        # Info label (video is displayed in separate SDL window)
+        info_label = QLabel("Video displays in separate hardware-accelerated window")
+        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info_label.setStyleSheet("color: gray; padding: 20px;")
+        layout.addWidget(info_label)
         
         # Control bar
         control_layout = QHBoxLayout()
@@ -102,7 +108,8 @@ class MainWindow(QMainWindow):
         self._aoa_host.set_status_callback(
             lambda msg: self._status_signal.update.emit(msg)
         )
-        self._video_decoder.set_frame_callback(self._video_window.show_frame)
+        # Video frames go to SDL window (YUV420P format)
+        self._video_decoder.set_frame_callback(self._sdl_video.update_frame)
         self._audio_decoder.set_sample_callback(self._handle_audio_samples)
     
     def _handle_audio_samples(self, samples, sample_rate: int):
@@ -150,6 +157,11 @@ class MainWindow(QMainWindow):
                 self._status_signal.update.emit(f"Connect failed: {self._aoa_host.last_error}")
                 return
             
+            # Start SDL video window
+            if not self._sdl_video.start():
+                self._status_signal.update.emit("Failed to start video window")
+                # Continue anyway - audio will still work
+            
             # Start audio and receive loop
             self._audio_player.start()
             self._running = True
@@ -162,7 +174,8 @@ class MainWindow(QMainWindow):
         self._running = False
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        self._video_window.clear()
+        self._video_decoder.stop()
+        self._sdl_video.stop()
         
         self._connect_btn.setEnabled(True)
         self._disconnect_btn.setEnabled(False)
@@ -285,6 +298,8 @@ class MainWindow(QMainWindow):
         self._running = False
         self._aoa_host.disconnect()
         self._audio_player.stop()
+        self._video_decoder.stop()
+        self._sdl_video.stop()
         
         # Shutdown thread pools
         self._video_executor.shutdown(wait=False)
