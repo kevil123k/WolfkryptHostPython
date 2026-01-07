@@ -212,6 +212,14 @@ class FFplayVideo:
         import time
         time.sleep(0.1)  # 100ms for mpv initialization
         
+        # Check if mpv is still running
+        poll_result = self._process.poll()
+        if poll_result is not None:
+            print(f"[mpv] ERROR: Process died during initialization with exit code: {poll_result}")
+            print(f"[mpv] This usually means invalid command-line arguments")
+            self._running = False
+            return False
+        
         # Send SPS/PPS if we have them
         if self._sps and self._pps:
             self._send_config()
@@ -344,6 +352,7 @@ class FFplayVideo:
     
     def _read_stderr(self):
         """Read mpv stderr for diagnostics."""
+        print("[mpv] stderr reader started")
         while self._running:
             try:
                 if not self._process or not self._process.stderr:
@@ -353,8 +362,15 @@ class FFplayVideo:
                     msg = line.decode('utf-8', errors='ignore').strip()
                     if msg:
                         print(f"[mpv] {msg}")
-            except Exception:
+                else:
+                    # Empty line might mean process ended
+                    if self._process.poll() is not None:
+                        print(f"[mpv] Process exited with code: {self._process.poll()}")
+                        break
+            except Exception as e:
+                print(f"[mpv] stderr reader error: {e}")
                 break
+        print("[mpv] stderr reader stopped")
                 
     def stop(self):
         """Stop mpv."""

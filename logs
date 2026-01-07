@@ -1,32 +1,30 @@
-[AoaHost] Found endpoints: IN=0x81 OUT=0x01
 [AoaHost] Connected to Android device
 [AudioPlayer] Started: 48000Hz, 2ch
 [Auth] Challenge signed successfully
-[FFplay] SPS: 23 bytes
-[FFplay] PPS: 8 bytes
-[FFplay] Intel GPU detected
-[FFplay] Detected hardware: intel
-[FFplay] Started (PID: 6180)
-[FFplay] ffplay version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2003-2025 the FFmpeg developers
-[FFplay] built with gcc 15.2.0 (Rev8, Built by MSYS2 project)
-[FFplay] configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
-[FFplay] libavutil      60.  8.100 / 60.  8.100
-[FFplay] libavcodec     62. 11.100 / 62. 11.100
-[FFplay] libavformat    62.  3.100 / 62.  3.100
-[FFplay] libavdevice    62.  1.100 / 62.  1.100
-[FFplay] libavfilter    11.  4.100 / 11.  4.100
-[FFplay] libswscale      9.  1.100 /  9.  1.100
-[FFplay] libswresample   6.  1.100 /  6.  1.100
-[FFplay] Enable vulkan renderer to support hwaccel d3d11va
-[FFplay] Doesn't support vulkan renderer, fallback to SDL renderer
-[FFplay] Sent SPS/PPS config
-[FFplay] Ready for video frames
-[FFplay] 0 frames buffered, will send gradually
+[mpv] SPS: 23 bytes
+[mpv] PPS: 8 bytes
+[mpv] Intel GPU detected
+[mpv] Using hardware acceleration: d3d11va
+[mpv] Command: C:\mpv\mpv.COM - --hwdec=d3d11va --hwdec-codecs=h264 --profile=low-latency --no-cache --untimed --no-demuxer-thread --vd-lavc-threads=1 --opengl-glfinish=yes --opengl-swapinterval=0 --demuxer=h264 --demuxer-lavf-format=h264 --demuxer-lavf-analyzeduration=0.1 --demuxer-lavf-probesize=32768 --vo=gpu --gpu-api=d3d11 --gpu-context=win --title=Wolfkrypt Mirror --ontop --no-border --autofit=30% --keepaspect --no-audio --no-osc --no-osd-bar --cursor-autohide=100 --demuxer-max-bytes=2M --demuxer-readahead-secs=0.1 --video-sync=display-desync --interpolation=no --framedrop=vo --msg-level=all=info
+[mpv] Started (PID: 11000)
+[mpv] Stdin fileno after start: 4
+[mpv] Stdin mode: wb
+[mpv] Attempting to send config...
+[mpv] Process running: True
+[mpv] Process poll: 3221225501
+[mpv] Stdin available: True
+[mpv] Stdin fileno: 4
+[mpv] Stdin closed: False
+[mpv] Stdin writable: True
+[mpv] SPS data: 23 bytes, starts with: 0000000167420033
+[mpv] PPS data: 8 bytes, starts with: 0000000168ca43c8
+[mpv] Writing SPS...
+[mpv] Config send error: [Errno 22] Invalid argument
+[mpv] Error type: OSError
+[mpv] Traceback:
+Traceback (most recent call last):
+  File "C:\Users\Gurukrupa Sound\Desktop\Test\WolfkryptHostPython\src\render\ffplay_video.py", line 244, in _send_config
+    bytes_written = self._process.stdin.write(self._sps)
+OSError: [Errno 22] Invalid argument
+[mpv] 0 frames buffered, will send gradually
 [AudioDecoder] Initialized with AAC config
-Input #0, h264, from 'pipe:0':=    0KB vq=    0KB sq=    0B   0B
-[FFplay] Duration: N/A, bitrate: N/A
-[FFplay] Stream #0:0: Video: h264 (Baseline), yuv420p(tv, bt709, progressive), 2400x1080, 25 fps, 1200k tbr, 1200k tbn
-[FFplay] Vulkan renderer is not available
-[FFplay] Failed to open file 'pipe:0' or configure filtergraph
-[FFplay] nan    :  0.000 fd=   0 aq=    0KB vq=    0KB sq=    0B
-[FFplay] Pipe error: [Errno 22] Invalid argument
