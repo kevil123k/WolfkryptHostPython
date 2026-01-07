@@ -183,6 +183,8 @@ class FFplayVideo:
         # Build command based on detected hardware
         cmd = self._build_mpv_command(mpv_path, hw_accel)
         
+        print(f"[mpv] Command: {' '.join(cmd)}")
+        
         try:
             self._process = subprocess.Popen(
                 cmd,
@@ -192,9 +194,13 @@ class FFplayVideo:
                 bufsize=0
             )
             print(f"[mpv] Started (PID: {self._process.pid})")
+            print(f"[mpv] Stdin fileno after start: {self._process.stdin.fileno()}")
+            print(f"[mpv] Stdin mode: {self._process.stdin.mode if hasattr(self._process.stdin, 'mode') else 'N/A'}")
             
         except Exception as e:
+            import traceback
             print(f"[mpv] Failed to start: {e}")
+            traceback.print_exc()
             self._running = False
             return False
             
@@ -215,17 +221,40 @@ class FFplayVideo:
     def _send_config(self):
         """Send SPS/PPS to mpv."""
         if self._config_sent or not self._sps or not self._pps:
+            print(f"[mpv] Config send skipped - config_sent={self._config_sent}, has_sps={self._sps is not None}, has_pps={self._pps is not None}")
             return
+        
+        print(f"[mpv] Attempting to send config...")
+        print(f"[mpv] Process running: {self._process is not None}")
+        print(f"[mpv] Process poll: {self._process.poll() if self._process else 'N/A'}")
+        print(f"[mpv] Stdin available: {self._process.stdin is not None if self._process else False}")
+        
+        if self._process and self._process.stdin:
+            print(f"[mpv] Stdin fileno: {self._process.stdin.fileno()}")
+            print(f"[mpv] Stdin closed: {self._process.stdin.closed}")
+            print(f"[mpv] Stdin writable: {self._process.stdin.writable()}")
+            
+        print(f"[mpv] SPS data: {len(self._sps)} bytes, starts with: {self._sps[:8].hex()}")
+        print(f"[mpv] PPS data: {len(self._pps)} bytes, starts with: {self._pps[:8].hex()}")
             
         try:
             if self._process and self._process.stdin:
                 # Send SPS and PPS as separate NAL units
-                self._process.stdin.write(self._sps)
-                self._process.stdin.write(self._pps)
+                print("[mpv] Writing SPS...")
+                bytes_written = self._process.stdin.write(self._sps)
+                print(f"[mpv] SPS write returned: {bytes_written}")
+                
+                print("[mpv] Writing PPS...")
+                bytes_written = self._process.stdin.write(self._pps)
+                print(f"[mpv] PPS write returned: {bytes_written}")
+                
                 # Flush immediately to ensure mpv gets config
+                print("[mpv] Flushing stdin...")
                 self._process.stdin.flush()
+                print("[mpv] Flush complete")
+                
                 self._config_sent = True
-                print("[mpv] Sent SPS/PPS config")
+                print("[mpv] Sent SPS/PPS config successfully")
                 # Reset frame count after config
                 self._frame_count = 0
                 
@@ -236,7 +265,11 @@ class FFplayVideo:
                 print("[mpv] Ready for video frames")
                 
         except Exception as e:
+            import traceback
             print(f"[mpv] Config send error: {e}")
+            print(f"[mpv] Error type: {type(e).__name__}")
+            print(f"[mpv] Traceback:")
+            traceback.print_exc()
             self._running = False
             
     def decode(self, h264_data: bytes):
