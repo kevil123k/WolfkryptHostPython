@@ -134,24 +134,24 @@ class FFplayVideo:
         ]
         
         return cmd
-    mpv
+    
     def set_sps(self, sps: bytes):
         """Set Sequence Parameter Set."""
         if not sps.startswith(b'\x00\x00\x00\x01') and not sps.startswith(b'\x00\x00\x01'):
             sps = b'\x00\x00\x00\x01' + sps
         self._sps = sps
-        print(f"[FFplay] SPS: {len(sps)} bytes")
+        print(f"[mpv] SPS: {len(sps)} bytes")
         
         # Start if we have both SPS and PPS
         if self._pps and not self._running:
             self.start()
-            mpv
+            
     def set_pps(self, pps: bytes):
         """Set Picture Parameter Set."""
         if not pps.startswith(b'\x00\x00\x00\x01') and not pps.startswith(b'\x00\x00\x01'):
             pps = b'\x00\x00\x00\x01' + pps
         self._pps = pps
-        print(f"[FFplay] PPS: {len(pps)} bytes")
+        print(f"[mpv] PPS: {len(pps)} bytes")
         
         # Start mpv now that we have both SPS and PPS
         if self._sps and not self._running:
@@ -202,8 +202,7 @@ class FFplayVideo:
         
         # Give mpv a moment to initialize
         import time
-        time.sleep(0.1)  # 100ms for mpv
-        time.sleep(0.15)  # 150ms for hardware decoder initialization
+        time.sleep(0.1)  # 100ms for mpv initialization
         
         # Send SPS/PPS if we have them
         if self._sps and self._pps:
@@ -211,7 +210,8 @@ class FFplayVideo:
             
         return True
         
-    def _send_config(self):mpv."""
+    def _send_config(self):
+        """Send SPS/PPS to mpv."""
         if self._config_sent or not self._sps or not self._pps:
             return
             
@@ -234,13 +234,12 @@ class FFplayVideo:
                 print("[mpv] Ready for video frames")
                 
         except Exception as e:
-            print(f"[mpv e:
-            print(f"[FFplay] Config send error: {e}")
+            print(f"[mpv] Config send error: {e}")
             self._running = False
             
-    def decode(self, h264_datampv for decoding and display."""
-        # Buffer frames if mpvlay for decoding and display."""
-        # Buffer frames if FFplay not ready yet
+    def decode(self, h264_data: bytes):
+        """Send H.264 data to mpv for decoding and display."""
+        # Buffer frames if mpv not ready yet
         if not self._ready:
             with self._lock:
                 # Only buffer if we have SPS/PPS (otherwise frames are useless)
@@ -254,15 +253,15 @@ class FFplayVideo:
                         self._frame_buffer.append(h264_data)
             return
         
-        # Send buffered frames first (one per call to avoid overwhelming FFplay)
+        # Send buffered frames first (one per call to avoid overwhelming mpv)
         with self._lock:
             if self._frame_buffer:
                 buffered_frame = self._frame_buffer.pop(0)
                 try:
                     if self._process and self._process.stdin:
                         self._process.stdin.write(buffered_frame)
-                except Exceptmpv e:
-                    print(f"[FFplay] Buffer send error: {e}")
+                except Exception as e:
+                    print(f"[mpv] Buffer send error: {e}")
                     self._running = False
                     self._ready = False
                     return
@@ -280,12 +279,13 @@ class FFplayVideo:
             if self._frame_count >= self._flush_interval:
                 self._process.stdin.flush()
                 self._frame_count = 0
-        except (Brokempvrror, OSError) as e:
-            print(f"[FFplay] Pipe error: {e}")
+        except (BrokenPipeError, OSError) as e:
+            print(f"[mpv] Pipe error: {e}")
             self._running = False
             self._ready = False
             
-    def _flush_buffer(self):mpv after it's ready."""
+    def _flush_buffer(self):
+        """Send buffered frames to mpv after it's ready."""
         with self._lock:
             if not self._frame_buffer:
                 return
@@ -352,6 +352,5 @@ class FFplayVideo:
         pass
         
     def set_resolution_callback(self, callback):
-        """No-op for compatibility - mpvack):
-        """No-op for compatibility - FFplay auto-detects resolution."""
+        """No-op for compatibility - mpv auto-detects resolution."""
         pass
