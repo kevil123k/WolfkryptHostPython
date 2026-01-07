@@ -299,22 +299,36 @@ class VideoDecoder:
     def _read_frames(self):
         """Reader thread - reads decoded YUV frames from FFmpeg stdout."""
         frame_size = self._width * self._height * 3 // 2
+        buffer = bytearray()
+        
+        print(f"[VideoDecoder] Reader started, frame_size={frame_size} bytes")
         
         while self._running:
             try:
                 if not self._process or not self._process.stdout:
                     break
-                    
-                yuv_data = self._process.stdout.read(frame_size)
                 
-                if len(yuv_data) == 0:
+                # Read available data (non-blocking read with small chunks)
+                chunk = self._process.stdout.read(65536)  # 64KB chunks
+                
+                if len(chunk) == 0:
+                    # EOF - FFmpeg closed
+                    print("[VideoDecoder] FFmpeg stdout closed")
                     break
                     
-                if len(yuv_data) == frame_size:
+                buffer.extend(chunk)
+                
+                # Extract complete frames from buffer
+                while len(buffer) >= frame_size:
+                    yuv_data = bytes(buffer[:frame_size])
+                    buffer = buffer[frame_size:]
+                    
                     self._frames_decoded += 1
                     
                     if self._frames_decoded == 1:
                         print(f"[VideoDecoder] First frame: {self._width}x{self._height}")
+                    elif self._frames_decoded % 60 == 0:
+                        print(f"[VideoDecoder] Decoded {self._frames_decoded} frames")
                         
                     if self._frame_callback:
                         self._frame_callback(yuv_data, self._width, self._height)
@@ -324,7 +338,7 @@ class VideoDecoder:
                     print(f"[VideoDecoder] Read error: {e}")
                 break
                 
-        print(f"[VideoDecoder] Stopped ({self._frames_decoded} frames)")
+        print(f"[VideoDecoder] Reader stopped ({self._frames_decoded} frames, {len(buffer)} bytes buffered)")
         
     def _read_stderr(self):
         """Read FFmpeg stderr for diagnostics."""
