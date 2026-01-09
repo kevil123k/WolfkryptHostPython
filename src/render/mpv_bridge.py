@@ -21,7 +21,7 @@ class MPVBridge:
     to achieve <50ms display latency.
     """
     
-    # Ultra low-latency MPV flags
+    # MPV flags for DirectX hardware acceleration (no Vulkan needed)
     MPV_LOW_LATENCY_FLAGS = [
         # Input
         '--demuxer-lavf-format=h264',
@@ -35,15 +35,14 @@ class MPVBridge:
         '--cache-pause=no',
         '--cache-secs=0',
         
-        # Hardware decode
-        '--hwdec=auto',
+        # Hardware decode - DXVA2 works on Intel HD 4000
+        '--hwdec=dxva2',
         '--hwdec-codecs=h264',
         
-        # Display
-        '--vo=gpu',
-        '--gpu-api=auto',
-        '--video-sync=desync',    # Don't sync to display
-        '--framedrop=no',         # Never drop frames
+        # Video output - D3D11 (not Vulkan)
+        '--vo=direct3d',          # Use Direct3D (not GPU/Vulkan)
+        '--video-sync=desync',
+        '--framedrop=no',
         '--vd-lavc-threads=1',
         '--demuxer-thread=no',
         
@@ -57,9 +56,9 @@ class MPVBridge:
         '--no-osc',
         '--no-osd-bar',
         '--no-input-default-bindings',
-        '--no-audio',             # Disable audio in MPV
+        '--no-audio',
         
-        # Debug: Show hwdec status
+        # Verbose logging
         '--msg-level=all=warn,vd=v,vo=v',
         
         # Stdin

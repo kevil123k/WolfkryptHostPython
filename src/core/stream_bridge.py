@@ -1,5 +1,5 @@
 """
-Stream Bridge - Optimized USB to FFplay data router.
+Stream Bridge - Optimized USB to MPV data router.
 High-throughput version with minimal Python overhead.
 """
 
@@ -15,29 +15,29 @@ from src.core.protocol import (
     create_header,
     parse_header,
 )
-from src.render.ffplay_bridge import FFplayBridge
+from src.render.mpv_bridge import MPVBridge
 
 
 class StreamBridge:
-    """Optimized USB to FFplay bridge."""
+    """Optimized USB to MPV bridge."""
     
     # Performance tuning
-    USB_READ_SIZE = 65536      # 64KB reads (max USB bulk transfer)
-    USB_TIMEOUT_MS = 100       # Longer timeout = fewer syscalls
-    FLUSH_INTERVAL = 1         # Flush every frame for low latency
+    USB_READ_SIZE = 65536
+    USB_TIMEOUT_MS = 100
+    FLUSH_INTERVAL = 1
     
     def __init__(
         self,
         aoa_host: AoaHost,
         authenticator: Authenticator,
-        ffplay_path: Optional[str] = None,
+        mpv_path: Optional[str] = None,
         status_callback: Optional[Callable[[str], None]] = None,
     ):
         self._aoa_host = aoa_host
         self._authenticator = authenticator
         self._status_callback = status_callback
         
-        self._video_player = FFplayBridge(ffplay_path=ffplay_path)
+        self._video_player = MPVBridge(mpv_path=mpv_path)
         
         self._running = False
         self._usb_thread: Optional[threading.Thread] = None
