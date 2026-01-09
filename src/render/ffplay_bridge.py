@@ -21,10 +21,11 @@ class FFplayBridge:
         '-probesize', '32',
         '-analyzeduration', '0',
         
-        # Hardware decode - use d3d11va explicitly (not auto which needs Vulkan)
-        '-hwaccel', 'd3d11va',
+        # No hardware decode (FFplay build needs Vulkan for hwdec output)
+        # Software decode is still fast for H.264
         
-        # Display
+        # Display - use SDL (not Vulkan)
+        '-vf', 'format=yuv420p',   # Force YUV420P for SDL
         '-sync', 'ext',
         '-framedrop',
         '-fast',
