@@ -15,26 +15,25 @@ class FFplayBridge:
     
     FFPLAY_FLAGS = [
         # Input
-        '-f', 'h264',             # Raw H.264 input
-        '-flags', 'low_delay',    # Low delay mode
-        '-fflags', 'nobuffer',    # No input buffering
-        '-probesize', '32',       # Minimal probing
-        '-analyzeduration', '0',  # No analysis delay
+        '-f', 'h264',
+        '-flags', 'low_delay',
+        '-fflags', 'nobuffer',
+        '-probesize', '32',
+        '-analyzeduration', '0',
         
-        # Decode
-        '-hwaccel', 'auto',       # Auto hardware accel
+        # Hardware decode - use d3d11va explicitly (not auto which needs Vulkan)
+        '-hwaccel', 'd3d11va',
         
         # Display
-        '-sync', 'ext',           # External sync (no audio)
-        '-framedrop',             # Drop frames if behind
-        '-fast',                  # Fast decode
-        '-infbuf',                # Infinite buffer (for real-time)
+        '-sync', 'ext',
+        '-framedrop',
+        '-fast',
+        '-infbuf',
         
         # Window
         '-window_title', 'Wolfkrypt Mirror',
-        '-alwaysontop',
-        '-x', '480',              # Window width
-        '-y', '720',              # Window height (mobile aspect)
+        '-x', '480',
+        '-y', '640',
         
         # No audio
         '-an',
@@ -74,18 +73,13 @@ class FFplayBridge:
         try:
             cmd = [self._ffplay_path] + self.FFPLAY_FLAGS
             
-            # Use CREATE_NO_WINDOW on Windows to avoid console popup
-            creationflags = 0
-            if os.name == 'nt':
-                creationflags = subprocess.CREATE_NO_WINDOW
-            
+            # Don't use CREATE_NO_WINDOW - ffplay needs a window!
             self._process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 bufsize=0,
-                creationflags=creationflags,
             )
             
             self._running = True
