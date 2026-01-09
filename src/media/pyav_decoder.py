@@ -178,7 +178,7 @@ class PyAVDecoder:
                 for frame in self._codec_ctx.decode(packet):
                     # Unlikely to get frames from just SPS/PPS, but handle if we do
                     self._process_frame(frame)
-            except av.AVError:
+            except Exception:
                 pass  # Normal - SPS/PPS don't produce frames
             
             self._running = True
@@ -207,7 +207,7 @@ class PyAVDecoder:
                 try:
                     for frame in self._codec_ctx.decode(packet):
                         self._process_frame(frame)
-                except av.AVError:
+                except Exception:
                     pass
             
             self._running = True
@@ -247,7 +247,7 @@ class PyAVDecoder:
             for frame in self._codec_ctx.decode(packet):
                 return self._process_frame(frame)
                 
-        except av.AVError as e:
+        except Exception as e:
             # Decoder errors are often recoverable (corrupt frame, etc.)
             if self._frames_decoded == 0:
                 print(f"[PyAVDecoder] Decode error: {e}")
@@ -275,10 +275,57 @@ class PyAVDecoder:
         if frame.format.name != 'yuv420p':
             frame = frame.reformat(format='yuv420p')
         
-        # Extract plane data
-        y_plane = bytes(frame.planes[0])
-        u_plane = bytes(frame.planes[1])
-        v_plane = bytes(frame.planes[2])
+        # Use to_ndarray() which handles stride correctly (removes padding)
+        # This produces contiguous pixel data without stride gaps
+        try:
+            import numpy as np
+            
+            # Get dimensions
+            width = frame.width
+            height = frame.height
+            
+            # Extract Y plane (full resolution) - handle stride
+            y_plane_data = frame.planes[0]
+            y_stride = y_plane_data.line_size
+            if y_stride == width:
+                # No padding, use directly
+                y_plane = bytes(y_plane_data)[:width * height]
+            else:
+                # Has stride padding, copy row by row
+                y_array = np.frombuffer(bytes(y_plane_data), dtype=np.uint8)
+                y_array = y_array.reshape(height, y_stride)[:, :width]
+                y_plane = y_array.tobytes()
+            
+            # Extract U plane (half resolution)
+            u_plane_data = frame.planes[1]
+            u_stride = u_plane_data.line_size
+            u_width = width // 2
+            u_height = height // 2
+            if u_stride == u_width:
+                u_plane = bytes(u_plane_data)[:u_width * u_height]
+            else:
+                u_array = np.frombuffer(bytes(u_plane_data), dtype=np.uint8)
+                u_array = u_array.reshape(u_height, u_stride)[:, :u_width]
+                u_plane = u_array.tobytes()
+            
+            # Extract V plane (half resolution)
+            v_plane_data = frame.planes[2]
+            v_stride = v_plane_data.line_size
+            v_width = width // 2
+            v_height = height // 2
+            if v_stride == v_width:
+                v_plane = bytes(v_plane_data)[:v_width * v_height]
+            else:
+                v_array = np.frombuffer(bytes(v_plane_data), dtype=np.uint8)
+                v_array = v_array.reshape(v_height, v_stride)[:, :v_width]
+                v_plane = v_array.tobytes()
+                
+        except Exception as e:
+            # Fallback: just use raw bytes (may have stride issues on some systems)
+            print(f"[PyAVDecoder] Stride handling failed, using raw: {e}")
+            y_plane = bytes(frame.planes[0])
+            u_plane = bytes(frame.planes[1])
+            v_plane = bytes(frame.planes[2])
         
         yuv_frame = YUVFrame(
             y_plane=y_plane,

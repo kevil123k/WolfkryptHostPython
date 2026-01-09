@@ -210,19 +210,9 @@ class StreamPipeline:
                 pass  # Drop frame if queue full
         
         elif packet_type == PacketType.AUDIO:
-            # Queue for audio processing
-            try:
-                self._audio_queue.put_nowait(payload)
-            except queue.Full:
-                pass
-            
-            # Notify audio callback
+            # Pass audio directly to callback for decoding
             if self._audio_callback:
-                try:
-                    audio_data = self._audio_queue.get_nowait()
-                    self._audio_callback(audio_data)
-                except queue.Empty:
-                    pass
+                self._audio_callback(payload)
         
         elif packet_type == PacketType.CONFIG:
             # Handle config packets (SPS/PPS/AAC config)

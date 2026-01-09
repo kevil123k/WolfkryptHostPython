@@ -160,7 +160,8 @@ class MainWindow(QMainWindow):
                 status_callback=lambda msg: self._status_signal.update.emit(msg)
             )
             
-            # Set up audio handling
+            # Set up audio handling - connect audio packets to decoder
+            self._pipeline.set_audio_callback(self._audio_decoder.decode)
             self._pipeline.set_config_callback(self._handle_config)
             
             # Start audio player
