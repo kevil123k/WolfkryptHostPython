@@ -1,5 +1,5 @@
 """
-Stream Bridge - Optimized USB to MPV data router.
+Stream Bridge - Optimized USB to FFplay data router.
 High-throughput version with minimal Python overhead.
 """
 
@@ -15,11 +15,11 @@ from src.core.protocol import (
     create_header,
     parse_header,
 )
-from src.render.mpv_bridge import MPVBridge
+from src.render.ffplay_bridge import FFplayBridge
 
 
 class StreamBridge:
-    """Optimized USB to MPV bridge."""
+    """Optimized USB to FFplay bridge."""
     
     # Performance tuning
     USB_READ_SIZE = 65536      # 64KB reads (max USB bulk transfer)
@@ -30,14 +30,14 @@ class StreamBridge:
         self,
         aoa_host: AoaHost,
         authenticator: Authenticator,
-        mpv_path: Optional[str] = None,
+        ffplay_path: Optional[str] = None,
         status_callback: Optional[Callable[[str], None]] = None,
     ):
         self._aoa_host = aoa_host
         self._authenticator = authenticator
         self._status_callback = status_callback
         
-        self._video_mpv = MPVBridge(mpv_path=mpv_path)
+        self._video_player = FFplayBridge(ffplay_path=ffplay_path)
         
         self._running = False
         self._usb_thread: Optional[threading.Thread] = None
@@ -62,7 +62,7 @@ class StreamBridge:
         if self._running:
             return True
         
-        if not self._video_mpv.start():
+        if not self._video_player.start():
             self._report_status("Failed to start MPV")
             return False
         
@@ -80,7 +80,7 @@ class StreamBridge:
     
     def stop(self):
         self._running = False
-        self._video_mpv.stop()
+        self._video_player.stop()
         if self._usb_thread and self._usb_thread.is_alive():
             self._usb_thread.join(timeout=1.0)
         self._report_status("Stream bridge stopped")
@@ -158,11 +158,11 @@ class StreamBridge:
                     if len(payload) >= 4 and payload[:4] != start_code and payload[:3] != b'\x00\x00\x01':
                         payload = start_code + payload
                     
-                    self._video_mpv.write(payload)
+                    self._video_player.write(payload)
                     self._video_packets += 1
                     
                     # Flush every frame
-                    self._video_mpv.flush()
+                    self._video_player.flush()
                     
                     if self._video_packets == 1:
                         self._report_status("First video frame sent")
@@ -227,9 +227,9 @@ class StreamBridge:
             return
         
         print("[StreamBridge] Sending SPS/PPS...")
-        self._video_mpv.write(self._sps)
-        self._video_mpv.write(self._pps)
-        self._video_mpv.flush()
+        self._video_player.write(self._sps)
+        self._video_player.write(self._pps)
+        self._video_player.flush()
         self._config_sent = True
     
     def _handle_auth(self, challenge: bytes):
