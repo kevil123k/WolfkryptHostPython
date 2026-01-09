@@ -21,11 +21,13 @@ class FFplayBridge:
         '-probesize', '32',
         '-analyzeduration', '0',
         
-        # No hardware decode (FFplay build needs Vulkan for hwdec output)
-        # Software decode is still fast for H.264
+        # Use DXVA2 (DirectX 9, works on Intel HD 4000)
+        # FFplay's Vulkan renderer is broken, so use dxva2 output
+        '-hwaccel', 'dxva2',
+        '-hwaccel_output_format', 'dxva2_vld',
         
-        # Display - use SDL (not Vulkan)
-        '-vf', 'format=yuv420p',   # Force YUV420P for SDL
+        # Display
+        '-vf', 'hwdownload,format=nv12,format=yuv420p',  # Convert from DXVA to SDL
         '-sync', 'ext',
         '-framedrop',
         '-fast',
