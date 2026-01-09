@@ -143,9 +143,14 @@ class StreamBridge:
                 
                 # Route packet
                 if pkt_type == video_type:
-                    # Fast path for video
+                    # CRITICAL: Drop video until config is sent
                     if not self._config_sent:
-                        self._send_config_to_mpv()
+                        if self._sps and self._pps:
+                            self._send_config_to_mpv()
+                        else:
+                            # Skip video frame - no config yet
+                            pos = pos + total
+                            continue
                     
                     payload = bytes(buffer[payload_start:payload_end])
                     
@@ -156,12 +161,11 @@ class StreamBridge:
                     self._video_mpv.write(payload)
                     self._video_packets += 1
                     
-                    # Always flush for lowest latency
-                    if self._video_packets % self.FLUSH_INTERVAL == 0:
-                        self._video_mpv.flush()
+                    # Flush every frame
+                    self._video_mpv.flush()
                     
                     if self._video_packets == 1:
-                        self._report_status("First video frame")
+                        self._report_status("First video frame sent")
                 
                 elif pkt_type == config_type:
                     payload = bytes(buffer[payload_start:payload_end])

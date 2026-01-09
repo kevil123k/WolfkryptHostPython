@@ -59,6 +59,9 @@ class MPVBridge:
         '--no-input-default-bindings',
         '--no-audio',             # Disable audio in MPV
         
+        # Debug: Show hwdec status
+        '--msg-level=all=warn,vd=v,vo=v',
+        
         # Stdin
         '-',
     ]
@@ -174,9 +177,8 @@ class MPVBridge:
                 if line:
                     msg = line.decode('utf-8', errors='ignore').strip()
                     if msg:
-                        # Filter out noisy messages
-                        if 'error' in msg.lower() or 'warn' in msg.lower():
-                            print(f"[MPV] {msg}")
+                        # Show all messages for debugging
+                        print(f"[MPV] {msg}")
                 else:
                     if self._process.poll() is not None:
                         print(f"[MPVBridge] Process exited: {self._process.poll()}")
