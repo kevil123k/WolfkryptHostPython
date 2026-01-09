@@ -1,5 +1,7 @@
 """
 Main window for Wolfkrypt Host application.
+
+Uses the new StreamPipeline for low-latency video streaming.
 """
 
 import sys
@@ -18,9 +20,9 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 # Use absolute imports for PyInstaller compatibility
 from src.core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
 from src.core.protocol import ConfigSubtype
+from src.core.pipeline import StreamPipeline
 from src.media import AudioDecoder
 from src.render import AudioPlayer
-from src.render.ffplay_video import FFplayVideo
 
 
 class StatusSignal(QObject):
@@ -37,13 +39,14 @@ class MainWindow(QMainWindow):
         # Core components
         self._aoa_host = AoaHost()
         self._authenticator = Authenticator()
-        self._video_player = FFplayVideo(title="Wolfkrypt Mirror")  # FFplay for low-latency video
         self._audio_decoder = AudioDecoder()
         self._audio_player = AudioPlayer()
         
+        # Pipeline (replaces FFplayVideo)
+        self._pipeline: Optional[StreamPipeline] = None
+        
         # State
         self._running = False
-        self._receive_thread: Optional[threading.Thread] = None
         
         # Thread pool for audio decode
         self._audio_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='audio_decode')
@@ -103,7 +106,6 @@ class MainWindow(QMainWindow):
         self._aoa_host.set_status_callback(
             lambda msg: self._status_signal.update.emit(msg)
         )
-        # FFplay handles video decode and display - no callbacks needed
         self._audio_decoder.set_sample_callback(self._handle_audio_samples)
     
     def _handle_audio_samples(self, samples, sample_rate: int):
@@ -151,125 +153,53 @@ class MainWindow(QMainWindow):
                 self._status_signal.update.emit(f"Connect failed: {self._aoa_host.last_error}")
                 return
             
-            # FFplay will start automatically when SPS/PPS are received
-            # Start audio and receive loop
+            # Create and start the pipeline
+            self._pipeline = StreamPipeline(
+                aoa_host=self._aoa_host,
+                authenticator=self._authenticator,
+                status_callback=lambda msg: self._status_signal.update.emit(msg)
+            )
+            
+            # Set up audio handling
+            self._pipeline.set_config_callback(self._handle_config)
+            
+            # Start audio player
             self._audio_player.start()
+            
+            # Start the pipeline
             self._running = True
-            self._receive_loop()
+            if not self._pipeline.start():
+                self._status_signal.update.emit("Failed to start pipeline")
+                return
+            
+            self._status_signal.update.emit("Connected - Streaming")
         
         threading.Thread(target=connect_thread, daemon=True).start()
+    
+    def _handle_config(self, subtype: int, config_data: bytes):
+        """Handle config packets from the pipeline."""
+        if subtype == ConfigSubtype.AUDIO_AAC:
+            self._audio_decoder.set_config(config_data)
     
     def _on_disconnect(self):
         """Handle disconnect button click."""
         self._running = False
+        
+        if self._pipeline:
+            self._pipeline.stop()
+            self._pipeline = None
+        
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        self._video_player.stop()
         
         self._connect_btn.setEnabled(True)
         self._disconnect_btn.setEnabled(False)
         self._status_label.setText("Disconnected")
     
-    def _receive_loop(self):
-        """Main receive loop for USB data."""
-        self._disconnect_btn.setEnabled(True)
-        buffer = bytearray()
-        
-        while self._running and self._aoa_host.is_connected:
-            # Read data
-            data = self._aoa_host.read(16384, timeout_ms=100)
-            if data is None:
-                break
-            if len(data) == 0:
-                continue
-            
-            buffer.extend(data)
-            
-            # Process complete packets
-            while len(buffer) >= HEADER_TOTAL_SIZE:
-                header = parse_header(bytes(buffer[:HEADER_TOTAL_SIZE]))
-                if not header:
-                    break
-                
-                total_size = HEADER_TOTAL_SIZE + header.length
-                if len(buffer) < total_size:
-                    break
-                
-                # Extract payload
-                payload = bytes(buffer[HEADER_TOTAL_SIZE:total_size])
-                buffer = buffer[total_size:]
-                
-                # Handle packet
-                self._handle_packet(header.type, payload)
-        
-        self._status_signal.update.emit("Connection closed")
-    
-    def _handle_packet(self, packet_type: PacketType, payload: bytes):
-        """Handle a received packet."""
-        if packet_type == PacketType.VIDEO:
-            # Send video directly to FFplay (no queuing for lowest latency!)
-            self._video_player.decode(payload)
-        
-        elif packet_type == PacketType.AUDIO:
-            # Decode audio in background thread to prevent blocking
-            try:
-                self._audio_queue.put_nowait(payload)
-                self._audio_executor.submit(self._decode_audio_frame)
-            except queue.Full:
-                pass  # Drop frame if queue is full
-        
-        elif packet_type == PacketType.CONFIG:
-            if len(payload) < 1:
-                return
-            subtype = payload[0]
-            config_data = payload[1:]
-            
-            if subtype == ConfigSubtype.VIDEO_SPS:
-                self._video_player.set_sps(config_data)
-            elif subtype == ConfigSubtype.VIDEO_PPS:
-                self._video_player.set_pps(config_data)
-            elif subtype == ConfigSubtype.AUDIO_AAC:
-                self._audio_decoder.set_config(config_data)
-        
-        elif packet_type == PacketType.AUTH_CHALLENGE:
-            # Sign challenge and send response
-            signature = self._authenticator.sign_challenge(payload)
-            if signature:
-                from ..core.protocol import create_header
-                response = create_header(PacketType.AUTH_RESPONSE, len(signature)) + signature
-                self._aoa_host.write(response)
-        
-        elif packet_type == PacketType.AUTH_SUCCESS:
-            self._status_signal.update.emit("Authentication successful")
-        
-        elif packet_type == PacketType.AUTH_FAIL:
-            self._status_signal.update.emit("Authentication failed")
-            self._running = False
-    
-    def _decode_video_frame(self):
-        """Decode a video frame from the queue (runs in thread pool)."""
-        try:
-            payload = self._video_queue.get_nowait()
-            self._video_decoder.decode(payload)
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print(f"[Video] Decode error: {e}")
-    
-    def _decode_audio_frame(self):
-        """Decode an audio frame from the queue (runs in thread pool)."""
-        try:
-            payload = self._audio_queue.get_nowait()
-            self._audio_decoder.decode(payload)
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print(f"[Audio] Decode error: {e}")
-    
     def _update_status(self, message: str):
         """Update status (called on main thread)."""
         self.statusBar().showMessage(message)
-        if "Connected" in message:
+        if "Connected" in message or "Streaming" in message:
             self._connect_btn.setEnabled(False)
             self._disconnect_btn.setEnabled(True)
             self._status_label.setText("Connected")
@@ -281,9 +211,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle window close."""
         self._running = False
+        
+        if self._pipeline:
+            self._pipeline.stop()
+        
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        self._video_player.stop()
         
         # Shutdown thread pool
         self._audio_executor.shutdown(wait=False)

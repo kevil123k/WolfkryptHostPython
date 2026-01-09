@@ -1,30 +1,104 @@
-[AoaHost] Connected to Android device
-[AudioPlayer] Started: 48000Hz, 2ch
-[Auth] Challenge signed successfully
-[mpv] SPS: 23 bytes
-[mpv] PPS: 8 bytes
-[mpv] Intel GPU detected
-[mpv] Using hardware acceleration: d3d11va
-[mpv] Command: C:\mpv\mpv.COM - --hwdec=d3d11va --hwdec-codecs=h264 --profile=low-latency --no-cache --untimed --no-demuxer-thread --vd-lavc-threads=1 --opengl-glfinish=yes --opengl-swapinterval=0 --demuxer=h264 --demuxer-lavf-format=h264 --demuxer-lavf-analyzeduration=0.1 --demuxer-lavf-probesize=32768 --vo=gpu --gpu-api=d3d11 --gpu-context=win --title=Wolfkrypt Mirror --ontop --no-border --autofit=30% --keepaspect --no-audio --no-osc --no-osd-bar --cursor-autohide=100 --demuxer-max-bytes=2M --demuxer-readahead-secs=0.1 --video-sync=display-desync --interpolation=no --framedrop=vo --msg-level=all=info
-[mpv] Started (PID: 11000)
-[mpv] Stdin fileno after start: 4
-[mpv] Stdin mode: wb
-[mpv] Attempting to send config...
-[mpv] Process running: True
-[mpv] Process poll: 3221225501
-[mpv] Stdin available: True
-[mpv] Stdin fileno: 4
-[mpv] Stdin closed: False
-[mpv] Stdin writable: True
-[mpv] SPS data: 23 bytes, starts with: 0000000167420033
-[mpv] PPS data: 8 bytes, starts with: 0000000168ca43c8
-[mpv] Writing SPS...
-[mpv] Config send error: [Errno 22] Invalid argument
-[mpv] Error type: OSError
-[mpv] Traceback:
-Traceback (most recent call last):
-  File "C:\Users\Gurukrupa Sound\Desktop\Test\WolfkryptHostPython\src\render\ffplay_video.py", line 244, in _send_config
-    bytes_written = self._process.stdin.write(self._sps)
-OSError: [Errno 22] Invalid argument
-[mpv] 0 frames buffered, will send gradually
-[AudioDecoder] Initialized with AAC config
+1. The Stack Verification (Windows 10 Context)
+
+    USB Layer: PyUSB + libusb-package.
+
+Auth Layer: PyNaCl (Ed25519).
+
+    Architect Note: This is solid. The key loading flow load_private_key → sign_challenge is standard and requires no changes, just integration into the new threaded loop.
+
+Media Layer: PyAV (FFmpeg wrapper).
+
+        Architect Note: This is the critical pivot point. We are abandoning ffplay/mpv (external process) for PyAV (in-memory decoding).
+
+2. The New System Architecture (The "Clone Host" Pattern)
+
+needs to implement a 3-Stage Pipeline to solve the lag.
+Stage A: The USB Pump (Thread 1 - I/O Bound)
+
+This thread’s only job is to get data off the USB bus before the hardware buffer fills up.
+
+    Input: Endpoint.read() from PyUSB.
+
+    Logic:
+
+        Read 5 bytes (Header).
+
+        Parse Length.
+
+        Read Payload.
+
+        Demux:
+
+            If 0x01 (Video): Push to VideoPacketQueue.
+
+            If 0x02 (Audio): Push to AudioPacketQueue.
+
+            If 0x10 (Auth): Trigger immediate Auth response logic (high priority).
+
+    Output: Raw H.264 byte chunks into Python Queues.
+
+Stage B: The Decoder Engine (Thread 2 - CPU Bound)
+
+This thread converts compressed data to raw images.
+
+    Input: VideoPacketQueue.
+
+    Hardware Acceleration Config:
+
+        Your builder must initialize av.CodecContext with options={'hwaccel': 'd3d11va'} (Direct3D 11 Video Acceleration).
+
+        Fallback: If d3d11va fails, try dxva2.
+
+    Logic:
+
+        Feed packets to codec.
+
+        Receive VideoFrame (YUV420P).
+
+        Critical Step: Push to the Dropping Queue.
+
+            Spec: This queue has maxsize=1. If a new frame arrives and the queue is full, delete the old frame and insert the new one. This guarantees the renderer always sees the latest reality, eliminating latency accumulation.
+
+    Output: Decoded YUV Frames.
+
+Stage C: The Renderer (Main Thread - GPU Bound)
+
+Windows 10 UI operations must live on the Main Thread.
+
+    Input: DroppingQueue.
+
+    Logic:
+
+        SDL2 Init: Create a Window and a Renderer with SDL_RENDERER_ACCELERATED.
+
+        Texture: Create a StreamingTexture in YV12 format (matching the YUV output of PyAV).
+
+        Loop:
+
+            Check Queue.
+
+            If Frame Exists: SDL_UpdateYUVTexture (Raw pointer copy, no conversion).
+
+            SDL_RenderCopy → SDL_RenderPresent.
+
+    Output: 60fps video on screen.
+
+3. Implementation Directive for your Builder AI
+
+    Project: Wolfkrypt Host Refactor (Windows 10)
+
+    Objective: Replace ffplay subprocess with in-process PyAV + SDL2 pipeline.
+
+    Technical Requirements:
+
+        Threading Model: Implement a 3-thread architecture: USB_Receiver, Video_Decoder, and Main_UI.
+
+        USB Handling: Use src/core/aoa.py logic. Must implement a robust "Read Loop" that strips the 5-byte protocol header (Type + Length) before passing data to queues.
+
+        Decoder Config: Configure PyAV for Windows Hardware Acceleration (d3d11va).
+
+        Latency Control: Implement a custom DroppingQueue class for decoded frames that overwrites old data (Size = 1).
+
+        Rendering: Use pysdl2 for the UI. The texture update must use UpdateYUVTexture to avoid expensive CPU color conversion.
+
+        Auth Integration: Ensure src/core/auth.py is called immediately when an Auth Challenge packet (0x10) is detected in the USB stream.
