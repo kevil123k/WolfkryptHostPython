@@ -1,26 +1,23 @@
 """
 Main window for Wolfkrypt Host application.
 
-Uses the new StreamPipeline for low-latency video streaming.
+Uses the new StreamBridge (MPV subprocess) for low-latency video streaming.
 """
 
-import sys
 import threading
-import queue
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QStatusBar, QMessageBox, QFileDialog
+    QPushButton, QLabel, QStatusBar, QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QObject
 
 # Use absolute imports for PyInstaller compatibility
-from src.core import AoaHost, Authenticator, PacketType, parse_header, HEADER_TOTAL_SIZE
+from src.core import AoaHost, Authenticator
 from src.core.protocol import ConfigSubtype
-from src.core.pipeline import StreamPipeline
+from src.core.stream_bridge import StreamBridge
 from src.media import AudioDecoder
 from src.render import AudioPlayer
 
@@ -42,17 +39,11 @@ class MainWindow(QMainWindow):
         self._audio_decoder = AudioDecoder()
         self._audio_player = AudioPlayer()
         
-        # Pipeline (replaces FFplayVideo)
-        self._pipeline: Optional[StreamPipeline] = None
+        # Stream bridge (replaces StreamPipeline)
+        self._bridge: Optional[StreamBridge] = None
         
         # State
         self._running = False
-        
-        # Thread pool for audio decode
-        self._audio_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='audio_decode')
-        
-        # Audio queue for producer-consumer pattern
-        self._audio_queue: queue.Queue = queue.Queue(maxsize=50)
         
         # Status signal for thread-safe updates
         self._status_signal = StatusSignal()
@@ -72,8 +63,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         
-        # Info label (video is displayed in separate SDL window)
-        info_label = QLabel("Video displays in separate hardware-accelerated window")
+        # Info label
+        info_label = QLabel("Video displays in MPV window (hardware accelerated)")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("color: gray; padding: 20px;")
         layout.addWidget(info_label)
@@ -109,8 +100,7 @@ class MainWindow(QMainWindow):
         self._audio_decoder.set_sample_callback(self._handle_audio_samples)
     
     def _handle_audio_samples(self, samples, sample_rate: int):
-        """Handle decoded audio samples with dynamic sample rate."""
-        # Update sample rate if it changed
+        """Handle decoded audio samples."""
         if sample_rate != self._audio_player._sample_rate:
             print(f"[Audio] Updating sample rate: {self._audio_player._sample_rate} -> {sample_rate}")
             self._audio_player.set_sample_rate(sample_rate)
@@ -153,32 +143,32 @@ class MainWindow(QMainWindow):
                 self._status_signal.update.emit(f"Connect failed: {self._aoa_host.last_error}")
                 return
             
-            # Create and start the pipeline
-            self._pipeline = StreamPipeline(
+            # Create the stream bridge (MPV-based)
+            self._bridge = StreamBridge(
                 aoa_host=self._aoa_host,
                 authenticator=self._authenticator,
                 status_callback=lambda msg: self._status_signal.update.emit(msg)
             )
             
-            # Set up audio handling - connect audio packets to decoder
-            self._pipeline.set_audio_callback(self._audio_decoder.decode)
-            self._pipeline.set_config_callback(self._handle_config)
+            # Set up audio handling
+            self._bridge.set_audio_callback(self._audio_decoder.decode)
+            self._bridge.set_config_callback(self._handle_config)
             
             # Start audio player
             self._audio_player.start()
             
-            # Start the pipeline
+            # Start the bridge
             self._running = True
-            if not self._pipeline.start():
-                self._status_signal.update.emit("Failed to start pipeline")
+            if not self._bridge.start():
+                self._status_signal.update.emit("Failed to start stream bridge")
                 return
             
-            self._status_signal.update.emit("Connected - Streaming")
+            self._status_signal.update.emit("Connected - Streaming via MPV")
         
         threading.Thread(target=connect_thread, daemon=True).start()
     
     def _handle_config(self, subtype: int, config_data: bytes):
-        """Handle config packets from the pipeline."""
+        """Handle config packets from the bridge."""
         if subtype == ConfigSubtype.AUDIO_AAC:
             self._audio_decoder.set_config(config_data)
     
@@ -186,9 +176,9 @@ class MainWindow(QMainWindow):
         """Handle disconnect button click."""
         self._running = False
         
-        if self._pipeline:
-            self._pipeline.stop()
-            self._pipeline = None
+        if self._bridge:
+            self._bridge.stop()
+            self._bridge = None
         
         self._aoa_host.disconnect()
         self._audio_player.stop()
@@ -213,13 +203,10 @@ class MainWindow(QMainWindow):
         """Handle window close."""
         self._running = False
         
-        if self._pipeline:
-            self._pipeline.stop()
+        if self._bridge:
+            self._bridge.stop()
         
         self._aoa_host.disconnect()
         self._audio_player.stop()
-        
-        # Shutdown thread pool
-        self._audio_executor.shutdown(wait=False)
         
         event.accept()

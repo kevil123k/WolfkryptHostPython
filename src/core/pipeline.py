@@ -202,6 +202,14 @@ class StreamPipeline:
     def _handle_packet(self, packet_type: PacketType, payload: bytes):
         """Handle a received packet based on its type."""
         
+        # Debug: Log all packet types
+        if packet_type == PacketType.VIDEO:
+            pass  # Don't spam video packets
+        elif packet_type == PacketType.AUDIO:
+            pass  # Don't spam audio packets
+        else:
+            print(f"[Pipeline] Packet: type={packet_type.name}, len={len(payload)}")
+        
         if packet_type == PacketType.VIDEO:
             # Queue for decoder thread
             try:
@@ -253,15 +261,26 @@ class StreamPipeline:
         
         Consumes video packets, decodes to YUV frames, outputs to DroppingQueue.
         """
+        video_packets_received = 0
+        frames_decoded = 0
+        
         while self._running:
             try:
                 # Get video packet (blocking with timeout)
                 h264_data = self._video_queue.get(timeout=0.1)
+                video_packets_received += 1
+                
+                # Log first few packets
+                if video_packets_received <= 5:
+                    print(f"[Decoder] Video packet #{video_packets_received}: {len(h264_data)} bytes")
+                elif video_packets_received % 100 == 0:
+                    print(f"[Decoder] Video packets: {video_packets_received}, frames: {frames_decoded}")
                 
                 # Decode
                 frame = self._video_decoder.decode(h264_data)
                 
                 if frame:
+                    frames_decoded += 1
                     # Put to dropping queue (overwrites old frame if present)
                     dropped = self._frame_queue.put(frame)
                     if dropped:

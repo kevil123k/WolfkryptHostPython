@@ -1,104 +1,112 @@
-1. The Stack Verification (Windows 10 Context)
+This is an excellent starting point. Your MPV version (v0.41.0) is very recent (Jan 7, 2026), meaning it has the latest FFmpeg libraries (libavcodec 62.23.102). This is significantly better than standard builds and fully supports the Direct3D 11 (D3D11) hardware acceleration we need for the "Scrcpy-like" performance on Windows.
 
-    USB Layer: PyUSB + libusb-package.
+As your Project Manager & Architect, here is the approved execution plan and system design. Hand this specification to your developer/agent.
 
-Auth Layer: PyNaCl (Ed25519).
+🏗️ Architecture Specification: The "MPV Bridge" Host
+1. System Overview
+We are shifting from a monolithic "Decode-in-Python" architecture to a "Process Bridge" Architecture. Python will no longer decode video; its sole responsibility is to act as a high-speed data router between the USB port and the MPV subprocess.
 
-    Architect Note: This is solid. The key loading flow load_private_key → sign_challenge is standard and requires no changes, just integration into the new threaded loop.
+The Pipeline: [Android Device] ⏩ [USB (PyUSB)] ⏩ [Python "Demuxer"] ⏩ [Pipe (Stdin)] ⏩ [MPV Process (GPU)]
 
-Media Layer: PyAV (FFmpeg wrapper).
+2. Component Specifications
+Component A: The "Bridge" (Python Script)
+This is the core logic your agent needs to build. It has three distinct responsibilities:
 
-        Architect Note: This is the critical pivot point. We are abandoning ffplay/mpv (external process) for PyAV (in-memory decoding).
+The USB Pump (Input):
 
-2. The New System Architecture (The "Clone Host" Pattern)
+Throughput Priority: It must read from the USB endpoint in chunks (e.g., 16KB or 32KB).
 
-needs to implement a 3-Stage Pipeline to solve the lag.
-Stage A: The USB Pump (Thread 1 - I/O Bound)
+Protocol Compliance: It must buffer incoming bytes to ensure it always parses a full 5-byte header before reading the payload. Partial reads will break the stream.
 
-This thread’s only job is to get data off the USB bus before the hardware buffer fills up.
+The Demuxer (Logic):
 
-    Input: Endpoint.read() from PyUSB.
+Header Parsing: Read Type (1 byte) + Length (4 bytes).
 
-    Logic:
+Stripping: The critical task is to remove these 5 bytes. MPV must never see them.
 
-        Read 5 bytes (Header).
+Routing:
 
-        Parse Length.
+If Type == 0x01 (Video): Write payload to MPV Video Pipe.
 
-        Read Payload.
+If Type == 0x02 (Audio): Write payload to Audio Handler (See Section 3).
 
-        Demux:
+If Type == 0x10 (Auth): Handle internally in Python (do not send to MPV).
 
-            If 0x01 (Video): Push to VideoPacketQueue.
+The Process Manager:
 
-            If 0x02 (Audio): Push to AudioPacketQueue.
+Must spawn mpv.exe as a subprocess.
 
-            If 0x10 (Auth): Trigger immediate Auth response logic (high priority).
+Must keep the stdin pipe open.
 
-    Output: Raw H.264 byte chunks into Python Queues.
+Must handle clean shutdowns (if MPV closes, Python should exit, and vice versa).
 
-Stage B: The Decoder Engine (Thread 2 - CPU Bound)
+Component B: The Video Sink (MPV Configuration)
+Your MPV instance must be configured to behave like a raw stream renderer, not a media player.
 
-This thread converts compressed data to raw images.
+Required Launch Flags (The "Scrcpy Profile"):
 
-    Input: VideoPacketQueue.
+Low Latency Mode: --profile=low-latency (Disables internal buffers).
 
-    Hardware Acceleration Config:
+Synchronization: --untimed (Tells MPV "Do not wait for timestamps, render frames immediately").
 
-        Your builder must initialize av.CodecContext with options={'hwaccel': 'd3d11va'} (Direct3D 11 Video Acceleration).
+Hardware Acceleration: --hwdec=auto (Will pick up D3D11 on your Windows machine).
 
-        Fallback: If d3d11va fails, try dxva2.
+Format Specification: --demuxer-lavf-format=h264 (Crucial: Tells MPV the incoming pipe is raw H.264 Annex B).
 
-    Logic:
+Cache: --no-cache (Latency reduction).
 
-        Feed packets to codec.
+Input: - (Tells MPV to listen on Stdin).
 
-        Receive VideoFrame (YUV420P).
+3. Audio Architecture Decision
+Since raw H.264 and raw AAC cannot be easily mixed into a single pipe without complex container muxing (like MPEG-TS), we will use a Dual-Sink Strategy.
 
-        Critical Step: Push to the Dropping Queue.
+Video: Routes to MPV Instance #1.
 
-            Spec: This queue has maxsize=1. If a new frame arrives and the queue is full, delete the old frame and insert the new one. This guarantees the renderer always sees the latest reality, eliminating latency accumulation.
+Audio: Routes to MPV Instance #2 (Launched with --demuxer-lavf-format=aac).
 
-    Output: Decoded YUV Frames.
+Why? This keeps the Python code simple (no muxing logic needed) and lets MPV handle the clock synchronization for each stream independently.
 
-Stage C: The Renderer (Main Thread - GPU Bound)
+📅 Project Management: Execution Phases
+Direct your builder agent to execute in this order. Do not attempt to do everything at once.
 
-Windows 10 UI operations must live on the Main Thread.
+Phase 1: The "Silent Stream" (Video Only)
+Objective: Get 60fps video with <50ms latency. Tasks:
 
-    Input: DroppingQueue.
+Implement the Python subprocess spawner for MPV with the flags defined above.
 
-    Logic:
+Implement the USB read loop that only handles Type 0x01 (Video) and Type 0x03 (Config/SPS).
 
-        SDL2 Init: Create a Window and a Renderer with SDL_RENDERER_ACCELERATED.
+Ignore Audio and Auth packets (drop them) for this test.
 
-        Texture: Create a StreamingTexture in YV12 format (matching the YUV output of PyAV).
+Success Metric: You see the Android screen on Windows with no red artifacts and instant response.
 
-        Loop:
+Phase 2: The "Handshake" (Auth Integration)
+Objective: Make the connection work on a locked/unauthorized device. Tasks:
 
-            Check Queue.
+Re-enable the Type 0x10 (Auth) handler in Python.
 
-            If Frame Exists: SDL_UpdateYUVTexture (Raw pointer copy, no conversion).
+Ensure the Auth packets are processed before the MPV pipe logic (blocking auth is fine; streaming hasn't started yet).
 
-            SDL_RenderCopy → SDL_RenderPresent.
+Phase 3: The "Sound" (Audio Integration)
+Objective: Add audio support. Tasks:
 
-    Output: 60fps video on screen.
+Spawn the second MPV instance for Audio.
 
-3. Implementation Directive for your Builder AI
+Update the Python routing logic to send Type 0x02 payloads to the second MPV pipe.
 
-    Project: Wolfkrypt Host Refactor (Windows 10)
+📝 Instructions for Your Builder Agent
+Copy and paste this directive to your builder:
 
-    Objective: Replace ffplay subprocess with in-process PyAV + SDL2 pipeline.
+Directive: Build the "Wolfkrypt Host Bridge". Constraint: Do not use PyAV or FFplay. Use the subprocess module to pipe data to the local mpv.exe. Path: C:\Users\Gurukrupa Sound\Desktop\Test\WolfkryptHostPython\mpv\mpv.exe Logic:
 
-    Technical Requirements:
+Connect to USB.
 
-        Threading Model: Implement a 3-thread architecture: USB_Receiver, Video_Decoder, and Main_UI.
+Read 5-byte header.
 
-        USB Handling: Use src/core/aoa.py logic. Must implement a robust "Read Loop" that strips the 5-byte protocol header (Type + Length) before passing data to queues.
+If Video (0x01) or Config (0x03): Write payload to MPV Stdin.
 
-        Decoder Config: Configure PyAV for Windows Hardware Acceleration (d3d11va).
+If Auth (0x10): Process internally.
 
-        Latency Control: Implement a custom DroppingQueue class for decoded frames that overwrites old data (Size = 1).
+Flags: Use --profile=low-latency --untimed --demuxer-lavf-format=h264.
 
-        Rendering: Use pysdl2 for the UI. The texture update must use UpdateYUVTexture to avoid expensive CPU color conversion.
-
-        Auth Integration: Ensure src/core/auth.py is called immediately when an Auth Challenge packet (0x10) is detected in the USB stream.
+This structure solves your lag issue by offloading the heavy lifting to the C++ internals of MPV (FFmpeg), bypassing Python's slowness entirely.
