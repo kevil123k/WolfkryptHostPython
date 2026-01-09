@@ -21,43 +21,45 @@ class MPVBridge:
     to achieve <50ms display latency.
     """
     
-    # MPV configuration for real-time streaming (scrcpy-like)
+    # Ultra low-latency MPV flags
     MPV_LOW_LATENCY_FLAGS = [
-        # Input format
-        '--demuxer-lavf-format=h264',  # Raw H.264 Annex B input
-        '--demuxer-lavf-analyzeduration=0',  # No analysis delay
-        '--demuxer-lavf-probesize=32',  # Minimal probing
+        # Input
+        '--demuxer-lavf-format=h264',
+        '--demuxer-lavf-analyzeduration=0',
+        '--demuxer-lavf-probesize=32',
         
-        # Low latency profile
-        '--profile=low-latency',  # Disables internal buffering
-        '--untimed',  # Render immediately, ignore timestamps
-        '--no-cache',  # No caching
-        '--cache-pause=no',  # Never pause for buffering
+        # Zero latency
+        '--profile=low-latency',
+        '--untimed',
+        '--no-cache',
+        '--cache-pause=no',
+        '--cache-secs=0',
         
-        # Hardware acceleration
-        '--hwdec=auto',  # Auto-select (d3d11va on Windows)
+        # Hardware decode
+        '--hwdec=auto',
+        '--hwdec-codecs=h264',
         
-        # Video output
-        '--vo=gpu',  # GPU-accelerated output
-        '--gpu-api=d3d11',  # Direct3D 11 on Windows
-        '--video-sync=audio',  # Sync to audio when available
+        # Display
+        '--vo=gpu',
+        '--gpu-api=auto',
+        '--video-sync=desync',    # Don't sync to display
+        '--framedrop=no',         # Never drop frames
+        '--vd-lavc-threads=1',
+        '--demuxer-thread=no',
         
-        # Window settings
-        '--force-window=immediate',  # Show window immediately
-        '--keepaspect',  # Maintain aspect ratio
-        '--autofit=50%',  # Window size
+        # Window
+        '--force-window=immediate',
+        '--keepaspect',
+        '--autofit=50%',
         '--title=Wolfkrypt Mirror',
         
-        # Performance
-        '--vd-lavc-threads=1',  # Single decode thread (lowest latency)
-        '--demuxer-thread=no',  # No demuxer thread
+        # Disable extras
+        '--no-osc',
+        '--no-osd-bar',
+        '--no-input-default-bindings',
+        '--no-audio',             # Disable audio in MPV
         
-        # Disable unused features
-        '--no-osc',  # No on-screen controller
-        '--no-osd-bar',  # No progress bar
-        '--no-input-default-bindings',  # Minimal input handling
-        
-        # Read from stdin
+        # Stdin
         '-',
     ]
     

@@ -1,8 +1,6 @@
 """
-Stream Bridge - USB to MPV data router.
-
-This module reads from the USB AOA interface, strips protocol headers,
-and routes video/audio payloads directly to MPV subprocesses.
+Stream Bridge - Optimized USB to MPV data router.
+High-throughput version with minimal Python overhead.
 """
 
 import threading
@@ -21,14 +19,12 @@ from src.render.mpv_bridge import MPVBridge
 
 
 class StreamBridge:
-    """
-    USB to MPV bridge for low-latency streaming.
+    """Optimized USB to MPV bridge."""
     
-    Architecture:
-        USB → Python (header strip) → MPV stdin (H.264) → GPU decode → Display
-    
-    Python only routes data, all decoding happens in MPV.
-    """
+    # Performance tuning
+    USB_READ_SIZE = 65536      # 64KB reads (max USB bulk transfer)
+    USB_TIMEOUT_MS = 100       # Longer timeout = fewer syscalls
+    FLUSH_INTERVAL = 1         # Flush every frame for low latency
     
     def __init__(
         self,
@@ -37,64 +33,43 @@ class StreamBridge:
         mpv_path: Optional[str] = None,
         status_callback: Optional[Callable[[str], None]] = None,
     ):
-        """
-        Initialize the stream bridge.
-        
-        Args:
-            aoa_host: Initialized AOA USB host
-            authenticator: Ed25519 authenticator with loaded key
-            mpv_path: Path to mpv.exe (optional, will search if None)
-            status_callback: Optional callback for status messages
-        """
         self._aoa_host = aoa_host
         self._authenticator = authenticator
         self._status_callback = status_callback
         
-        # MPV bridges
         self._video_mpv = MPVBridge(mpv_path=mpv_path)
-        self._audio_mpv: Optional[MPVBridge] = None  # Phase 3
         
-        # State
         self._running = False
         self._usb_thread: Optional[threading.Thread] = None
         
-        # Config storage (SPS/PPS must be sent first)
         self._sps: Optional[bytes] = None
         self._pps: Optional[bytes] = None
         self._config_sent = False
         
-        # Stats
         self._video_packets = 0
-        self._audio_packets = 0
-        self._flush_interval = 5  # Flush every N video packets
+        self._bytes_received = 0
         
-        # Callbacks
         self._audio_callback: Optional[Callable[[bytes], None]] = None
         self._config_callback: Optional[Callable[[int, bytes], None]] = None
     
     def set_audio_callback(self, callback: Callable[[bytes], None]):
-        """Set callback for audio packets (Phase 3: will use MPV instead)."""
         self._audio_callback = callback
     
     def set_config_callback(self, callback: Callable[[int, bytes], None]):
-        """Set callback for config packets (subtype, data)."""
         self._config_callback = callback
     
     def start(self) -> bool:
-        """Start the streaming bridge."""
         if self._running:
             return True
         
-        # Start video MPV
         if not self._video_mpv.start():
-            self._report_status("Failed to start MPV for video")
+            self._report_status("Failed to start MPV")
             return False
         
         self._running = True
         
-        # Start USB read thread
         self._usb_thread = threading.Thread(
-            target=self._usb_loop,
+            target=self._usb_loop_optimized,
             name="USB_Bridge",
             daemon=True
         )
@@ -104,122 +79,122 @@ class StreamBridge:
         return True
     
     def stop(self):
-        """Stop the streaming bridge."""
         self._running = False
-        
-        # Stop MPV
         self._video_mpv.stop()
-        if self._audio_mpv:
-            self._audio_mpv.stop()
-        
-        # Wait for USB thread
         if self._usb_thread and self._usb_thread.is_alive():
             self._usb_thread.join(timeout=1.0)
-        
         self._report_status("Stream bridge stopped")
     
-    def _usb_loop(self):
-        """
-        USB read loop - strips headers and routes to MPV.
+    def _usb_loop_optimized(self):
+        """Optimized USB loop with minimal allocations."""
         
-        This is the heart of the bridge. It must:
-        1. Read USB data as fast as possible
-        2. Parse 5-byte headers
-        3. Strip headers (MPV must NOT see them)
-        4. Route payloads to appropriate sink
-        """
-        buffer = bytearray()
+        # Pre-allocate buffer
+        buffer = bytearray(self.USB_READ_SIZE * 4)
+        buffer_len = 0
+        
+        # Pre-compute constants
+        header_size = HEADER_TOTAL_SIZE
+        video_type = PacketType.VIDEO
+        audio_type = PacketType.AUDIO
+        config_type = PacketType.CONFIG
+        auth_challenge = PacketType.AUTH_CHALLENGE
+        auth_success = PacketType.AUTH_SUCCESS
+        auth_fail = PacketType.AUTH_FAIL
+        
+        # Start code for video
+        start_code = b'\x00\x00\x00\x01'
         
         while self._running and self._aoa_host.is_connected:
-            # Read USB data (16KB chunks for efficiency)
-            data = self._aoa_host.read(16384, timeout_ms=50)
+            # Large USB read
+            data = self._aoa_host.read(self.USB_READ_SIZE, timeout_ms=self.USB_TIMEOUT_MS)
+            
             if data is None:
-                self._report_status("USB connection lost")
+                self._report_status("USB disconnected")
                 break
+            
             if len(data) == 0:
                 continue
             
-            buffer.extend(data)
+            self._bytes_received += len(data)
             
-            # Process complete packets
-            while len(buffer) >= HEADER_TOTAL_SIZE:
-                header = parse_header(bytes(buffer[:HEADER_TOTAL_SIZE]))
-                if not header:
-                    # Invalid header, skip one byte and try again
-                    buffer = buffer[1:]
-                    continue
+            # Append to buffer using memoryview where possible
+            data_len = len(data)
+            if buffer_len + data_len > len(buffer):
+                # Grow buffer if needed
+                buffer.extend(b'\x00' * (buffer_len + data_len - len(buffer)))
+            buffer[buffer_len:buffer_len + data_len] = data
+            buffer_len += data_len
+            
+            # Process packets
+            pos = 0
+            while pos + header_size <= buffer_len:
+                # Parse header inline (avoid function call)
+                header_bytes = buffer[pos:pos + header_size]
+                pkt_type = header_bytes[0]
+                pkt_len = (header_bytes[1] << 24) | (header_bytes[2] << 16) | (header_bytes[3] << 8) | header_bytes[4]
                 
-                total_size = HEADER_TOTAL_SIZE + header.length
-                if len(buffer) < total_size:
-                    # Incomplete packet, wait for more data
+                total = header_size + pkt_len
+                if pos + total > buffer_len:
                     break
                 
-                # Extract payload (STRIP the 5-byte header!)
-                payload = bytes(buffer[HEADER_TOTAL_SIZE:total_size])
-                buffer = buffer[total_size:]
+                # Extract payload
+                payload_start = pos + header_size
+                payload_end = pos + total
                 
-                # Route by packet type
-                self._handle_packet(header.type, payload)
+                # Route packet
+                if pkt_type == video_type:
+                    # Fast path for video
+                    if not self._config_sent:
+                        self._send_config_to_mpv()
+                    
+                    payload = bytes(buffer[payload_start:payload_end])
+                    
+                    # Check start code
+                    if len(payload) >= 4 and payload[:4] != start_code and payload[:3] != b'\x00\x00\x01':
+                        payload = start_code + payload
+                    
+                    self._video_mpv.write(payload)
+                    self._video_packets += 1
+                    
+                    # Always flush for lowest latency
+                    if self._video_packets % self.FLUSH_INTERVAL == 0:
+                        self._video_mpv.flush()
+                    
+                    if self._video_packets == 1:
+                        self._report_status("First video frame")
+                
+                elif pkt_type == config_type:
+                    payload = bytes(buffer[payload_start:payload_end])
+                    self._handle_config(payload)
+                
+                elif pkt_type == audio_type:
+                    # Skip audio for now to reduce overhead
+                    pass
+                
+                elif pkt_type == auth_challenge:
+                    payload = bytes(buffer[payload_start:payload_end])
+                    self._handle_auth(payload)
+                
+                elif pkt_type == auth_success:
+                    self._report_status("Auth successful")
+                
+                elif pkt_type == auth_fail:
+                    self._report_status("Auth failed")
+                    self._running = False
+                
+                pos = pos + total
+            
+            # Compact buffer
+            if pos > 0:
+                remaining = buffer_len - pos
+                if remaining > 0:
+                    buffer[:remaining] = buffer[pos:buffer_len]
+                buffer_len = remaining
         
         self._running = False
-    
-    def _handle_packet(self, packet_type: PacketType, payload: bytes):
-        """Handle a received packet - route to appropriate sink."""
-        
-        if packet_type == PacketType.VIDEO:
-            self._handle_video(payload)
-        
-        elif packet_type == PacketType.AUDIO:
-            self._handle_audio(payload)
-        
-        elif packet_type == PacketType.CONFIG:
-            self._handle_config(payload)
-        
-        elif packet_type == PacketType.AUTH_CHALLENGE:
-            self._handle_auth(payload)
-        
-        elif packet_type == PacketType.AUTH_SUCCESS:
-            self._report_status("Authentication successful")
-        
-        elif packet_type == PacketType.AUTH_FAIL:
-            self._report_status("Authentication failed")
-            self._running = False
-    
-    def _handle_video(self, payload: bytes):
-        """Route video payload to MPV."""
-        # Must send SPS/PPS before video frames
-        if not self._config_sent:
-            self._send_config_to_mpv()
-        
-        # Ensure start code
-        if not payload.startswith(b'\x00\x00\x00\x01') and not payload.startswith(b'\x00\x00\x01'):
-            payload = b'\x00\x00\x00\x01' + payload
-        
-        # Write to MPV stdin
-        self._video_mpv.write(payload)
-        
-        self._video_packets += 1
-        
-        # Periodic flush for low latency
-        if self._video_packets % self._flush_interval == 0:
-            self._video_mpv.flush()
-        
-        # Log progress
-        if self._video_packets == 1:
-            self._report_status("First video frame sent to MPV")
-        elif self._video_packets % 300 == 0:
-            print(f"[StreamBridge] Video packets: {self._video_packets}")
-    
-    def _handle_audio(self, payload: bytes):
-        """Route audio payload to audio handler."""
-        self._audio_packets += 1
-        
-        # For now, use callback (Phase 3 will use audio MPV)
-        if self._audio_callback:
-            self._audio_callback(payload)
+        print(f"[StreamBridge] Total: {self._video_packets} packets, {self._bytes_received / 1024 / 1024:.1f} MB")
     
     def _handle_config(self, payload: bytes):
-        """Handle configuration packets (SPS/PPS/AAC)."""
         if len(payload) < 1:
             return
         
@@ -227,7 +202,6 @@ class StreamBridge:
         config_data = payload[1:]
         
         if subtype == ConfigSubtype.VIDEO_SPS:
-            # Add start code if missing
             if not config_data.startswith(b'\x00\x00\x00\x01'):
                 config_data = b'\x00\x00\x00\x01' + config_data
             self._sps = config_data
@@ -238,29 +212,23 @@ class StreamBridge:
                 config_data = b'\x00\x00\x00\x01' + config_data
             self._pps = config_data
             print(f"[StreamBridge] PPS: {len(config_data)} bytes")
-            
-            # Send config to MPV now that we have both
             if self._sps:
                 self._send_config_to_mpv()
         
-        # Notify external callback (for audio config, etc.)
         if self._config_callback:
             self._config_callback(subtype, config_data)
     
     def _send_config_to_mpv(self):
-        """Send SPS/PPS to MPV to initialize decoder."""
         if self._config_sent or not self._sps or not self._pps:
             return
         
-        print("[StreamBridge] Sending SPS/PPS to MPV...")
+        print("[StreamBridge] Sending SPS/PPS...")
         self._video_mpv.write(self._sps)
         self._video_mpv.write(self._pps)
         self._video_mpv.flush()
         self._config_sent = True
-        print("[StreamBridge] SPS/PPS sent")
     
     def _handle_auth(self, challenge: bytes):
-        """Handle authentication challenge."""
         signature = self._authenticator.sign_challenge(challenge)
         if signature:
             response = create_header(PacketType.AUTH_RESPONSE, len(signature)) + signature
@@ -270,7 +238,6 @@ class StreamBridge:
             self._report_status(f"Auth failed: {self._authenticator.last_error}")
     
     def _report_status(self, message: str):
-        """Report status message."""
         print(f"[StreamBridge] {message}")
         if self._status_callback:
             self._status_callback(message)
@@ -278,10 +245,3 @@ class StreamBridge:
     @property
     def is_running(self) -> bool:
         return self._running
-    
-    @property
-    def stats(self) -> dict:
-        return {
-            'video_packets': self._video_packets,
-            'audio_packets': self._audio_packets,
-        }
